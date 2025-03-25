@@ -47,8 +47,9 @@ pub async fn capture_audio() -> Result<Vec<f32>, Box<dyn Error>> {
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config,
             move |data: &[f32], _| {
-                let mut buffer = audio_data_clone.lock().unwrap();
-                buffer.extend_from_slice(data);
+                if let Ok(mut buffer) = audio_data_clone.lock() {
+                    buffer.extend_from_slice(data);
+                }
             },
             err_fn,
             None,
@@ -59,16 +60,18 @@ pub async fn capture_audio() -> Result<Vec<f32>, Box<dyn Error>> {
     stream.play()?;
     println!("🎙️ Recording 1 seconds...");
 
-    sleep(Duration::from_secs(1)).await; // Enregistre 3 secondes
-    drop(stream); // Arrête le stream
+    sleep(Duration::from_secs(5)).await; // Enregistre 1 seconde
 
-    let result = match Arc::try_unwrap(audio_data) {
-      Ok(mutex) => match mutex.into_inner() {
-        Ok(data) => data,
+    // Explicitly stop the stream and ensure it's dropped
+    stream.pause()?;
+    drop(stream);
+
+    // Extract the recorded data
+    let result = match audio_data.lock() {
+        Ok(data) => data.clone(),
         Err(e) => return Err(format!("Failed to acquire mutex lock: {}", e).into()),
-      },
-      Err(_) => return Err("Failed to unwrap Arc, there are still other references".into()),
     };
+
     Ok(result)
 }
 

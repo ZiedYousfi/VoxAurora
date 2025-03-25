@@ -1,0 +1,12 @@
+{
+  "commands": [
+    {
+      "trigger": "test",
+      "action": "lancer_chrome"
+    },
+    {
+      "trigger": "lancer terminal",
+      "action": "ouvrir_terminal"
+    }
+  ]
+}

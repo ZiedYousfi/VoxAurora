@@ -26,8 +26,6 @@ pub fn execute_command(config: &Config, transcription: String) {
     println!("Liste de mots:");
     for (i, word) in words.iter().enumerate() {
         println!("Mot {}: {}", i, word);
-
-        // Check if the word matches any command trigger
         for command in &config.commands {
             if command.trigger.to_lowercase() == word.to_lowercase() {
                 println!("Command trigger detected: {}", command.trigger);

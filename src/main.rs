@@ -23,7 +23,9 @@ fn main() {
     let transcription =
         whisper_integration::transcribe(&whisper_model, &audio_data, "fr").expect("msg");
 
+    println!("---------------------------------------------------");
     println!("{}", &transcription);
+    println!("---------------------------------------------------");
 
     //Analyse et mapping de la commande via le JSON
     config::execute_command(&config, transcription);
