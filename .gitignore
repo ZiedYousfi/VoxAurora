@@ -1,0 +1,17 @@
+/target
+.DS_Store
+/.idea
+/.gradle
+/.gradle/
+*.iml
+*.hprof
+*.log
+*.jar
+*.war
+*.ear
+*.class
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
