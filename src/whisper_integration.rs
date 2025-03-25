@@ -7,7 +7,6 @@ pub fn init_model(path_to_model: String) -> Result<WhisperContext, Box<dyn Error
     Ok(ctx)
 }
 
-#[tokio::main]
 pub async fn transcribe(
     model: &WhisperContext,
     audio: &[f32],
