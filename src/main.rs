@@ -23,10 +23,16 @@ fn main() {
 
     println!("Loading Whisper model from: {}", model_path);
 
-    // Initialisation du modèle Whisper
-    let whisper_model = whisper_integration::init_model(model_path).expect("msg");
+    // Initialize the Whisper model
+    let whisper_model = match whisper_integration::init_model(model_path) {
+        Ok(model) => model,
+        Err(e) => {
+            eprintln!("Error initializing Whisper model: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    // Chargement de la configuration utilisateur
+    // Load user configuration
     // Get the config path from terminal input or use default
     println!("Enter the path to config file (or press Enter for default 'config.json'):");
     let mut config_path = String::new();
@@ -43,27 +49,45 @@ fn main() {
     };
 
     println!("Loading config from: {}", config_path);
-    let config = config::load_config(&config_path).expect("Erreur lors du chargement de la config");
+    let _config = match config::load_config(&config_path) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error loading config: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     let device = audio::get_device().expect("m");
 
-    // Boucle principale de dictée
+    // Main dictation loop
     loop {
         let audio_data = match audio::capture_audio(&device) {
             Ok(data) => data,
             Err(e) => {
-                eprintln!("Erreur lors de la capture audio: {}", e);
+                eprintln!("Error during audio capture: {}", e);
                 return;
             }
         };
-        let transcription =
-            whisper_integration::transcribe(&whisper_model, &audio_data, "fr").expect("msg");
+        let transcription = match whisper_integration::transcribe(&whisper_model, &audio_data, "fr")
+        {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("Error during audio transcription: {}", e);
+                continue;
+            }
+        };
 
         println!("---------------------------------------------------");
         println!("{}", &transcription);
         println!("---------------------------------------------------");
 
-        //Analyse et mapping de la commande via le JSON
-        config::execute_command(&config, transcription);
+        // Analyze and map the command via the JSON
+        match config::execute_command(&_config, transcription) {
+            Ok(_) => println!("Command executed successfully"),
+            Err(e) => {
+                eprintln!("Failed to execute command: {}", e);
+                continue;
+            }
+        };
     }
 }
