@@ -14,4 +14,4 @@
 *.swo
 *.sublime-workspace
 *.sublime-project
-
+/models/*
