@@ -1,5 +1,6 @@
 mod audio;
-mod config;
+pub mod actions;
+pub mod config;
 mod whisper_integration;
 
 fn main() {

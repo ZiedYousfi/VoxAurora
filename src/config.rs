@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::error::Error;
 use std::fs;
+use std::process::Command as ProcessCommand;
 
 #[derive(Deserialize)]
 pub struct Command {
@@ -30,7 +31,12 @@ pub fn execute_command(config: &Config, transcription: String) {
             if command.trigger.to_lowercase() == word.to_lowercase() {
                 println!("Command trigger detected: {}", command.trigger);
                 println!("Action: {}", command.action);
-                // Here you would execute the action
+
+                // Exécution de la commande
+                match actions::execute_action(&command.action) {
+                    Ok(_) => println!("Command executed successfully"),
+                    Err(e) => eprintln!("Failed to execute command: {}", e),
+                }
             }
         }
     }
