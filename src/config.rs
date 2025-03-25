@@ -34,7 +34,10 @@ pub fn execute_command(config: &Config, transcription: String) -> Result<(), Box
         result.push(' ');
 
         for command in &config.commands {
-            if result.to_lowercase().contains(&command.trigger.to_lowercase()) {
+            if result
+                .to_lowercase()
+                .contains(&command.trigger.to_lowercase())
+            {
                 println!("Command trigger detected: {}", command.trigger);
                 println!("Action: {}", command.action);
 
@@ -43,6 +46,8 @@ pub fn execute_command(config: &Config, transcription: String) -> Result<(), Box
                     Ok(_) => println!("Command executed successfully"),
                     Err(e) => eprintln!("Failed to execute command: {}", e),
                 }
+            } else if let Err(e) = actions::execute_enigo_text(result.clone()) {
+                eprintln!("Failed to execute text input: {}", e);
             }
         }
     }

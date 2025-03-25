@@ -1,9 +1,11 @@
 pub mod actions;
 mod audio;
 pub mod config;
+mod wakeword;
 mod whisper_integration;
 
 fn main() {
+    let mut awake = true;
     // Get the model path from terminal input or use default
     println!(
         "Enter the path to Whisper model (or press Enter for default './models/ggml-medium.bin'):"
@@ -81,13 +83,19 @@ fn main() {
         println!("{}", &transcription);
         println!("---------------------------------------------------");
 
-        // Analyze and map the command via the JSON
-        match config::execute_command(&_config, transcription) {
-            Ok(_) => println!("Command executed successfully"),
-            Err(e) => {
-                eprintln!("Failed to execute command: {}", e);
-                continue;
-            }
-        };
+        if wakeword::is_wake_word_triggered(&transcription) {
+            awake = !awake;
+        }
+
+        if awake {
+            // Analyze and map the command via the JSON
+            match config::execute_command(&_config, transcription) {
+                Ok(_) => println!("Command executed successfully"),
+                Err(e) => {
+                    eprintln!("Failed to execute command: {}", e);
+                    continue;
+                }
+            };
+        }
     }
 }
