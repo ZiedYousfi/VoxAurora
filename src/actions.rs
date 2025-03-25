@@ -1,21 +1,24 @@
-use enigo::{Enigo, KeyboardControllable};
+use enigo::*;
 use std::error::Error;
 use std::process::Command;
 
-pub fn execute_actions(input: &str) -> Result<(), Box<dyn Error>> {
+pub fn execute_action(input: &str) -> Result<(), Box<dyn Error>> {
     let action = input.to_string();
 
     if action.starts_with("cmd:") {
-        let tmp = action.strip_prefix("cmd:");
+        let tmp = action.strip_prefix("cmd:").unwrap_or("");
         match execute_shell_command(tmp) {
             Ok(_) => Ok(()),
-            Err(e) => return Err(format!("{}", e).into()),
+            Err(e) => Err(format!("{}", e).into()),
         }
     } else {
-        let mut enigo = Enigo::new();
-        match enigo.key_sequence(action) {
-          Ok(_) => Ok(()),
-          Err(e) => Err(format!("Failed to execute key sequence: {}", e).into()),
+        let enigo_result = Enigo::new(&enigo::Settings::default());
+        match enigo_result {
+            Ok(mut enigo) => match enigo.text(&(action.clone() + " ")) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to execute key sequence: {}", e).into()),
+            },
+            Err(e) => Err(format!("Failed to create Enigo instance: {}", e).into()),
         }
     }
 }

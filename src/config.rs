@@ -1,7 +1,7 @@
+use crate::actions;
 use serde::Deserialize;
 use std::error::Error;
 use std::fs;
-use std::process::Command as ProcessCommand;
 
 #[derive(Deserialize)]
 pub struct Command {
@@ -25,10 +25,24 @@ pub fn execute_command(config: &Config, transcription: String) {
     let words: Vec<&str> = transcription.split_whitespace().collect();
 
     println!("Liste de mots:");
+
+    let mut result = String::new();
+
     for (i, word) in words.iter().enumerate() {
         println!("Mot {}: {}", i, word);
+        result.push_str(&word);
+        result.push(' ');
+        // if !result.is_empty() {
+        //     // Remove trailing space
+        //     result.pop();
+
+        // match actions::execute_action(&result) {
+        //     Ok(_) => println!("Command executed successfully"),
+        //     Err(e) => eprintln!("Failed to execute command: {}", e),
+        // }
+
         for command in &config.commands {
-            if command.trigger.to_lowercase() == word.to_lowercase() {
+            if result.to_lowercase().contains(&command.trigger.to_lowercase()) {
                 println!("Command trigger detected: {}", command.trigger);
                 println!("Action: {}", command.action);
 
@@ -39,5 +53,6 @@ pub fn execute_command(config: &Config, transcription: String) {
                 }
             }
         }
+        // }
     }
 }

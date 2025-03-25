@@ -5,8 +5,12 @@
       "action": "lancer_chrome"
     },
     {
-      "trigger": "lancer terminal",
+      "trigger": "[Silence]",
       "action": "ouvrir_terminal"
+    },
+    {
+      "trigger": "[Propos inaudibles]",
+      "action": "lancer_chrome"
     }
   ]
 }

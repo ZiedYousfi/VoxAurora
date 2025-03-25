@@ -2,6 +2,9 @@
 name = "VoxAurora"
 version = "0.1.0"
 edition = "2024"
+description = "A voice command recognition system using Whisper model for speech-to-text and executing custom commands"
+license = "MIT"
+authors = ["Yousfi Zied"]
 
 [dependencies]
 whisper-rs = { version = "0.14.2" }
@@ -9,4 +12,4 @@ tokio = { version = "1.44.1", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15.3"
-enigo = { version = "0.3.0", features = ["x11"]}
+enigo = { version = "0.3.0" }

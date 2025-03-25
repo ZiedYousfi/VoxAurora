@@ -1,39 +1,13 @@
+use cpal::Device;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::sync::{Arc, Mutex};
 use std::error::Error;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::sleep;
 
 /// Capture une tranche d'audio en `f32`, mono.
 #[tokio::main]
-pub async fn capture_audio() -> Result<Vec<f32>, Box<dyn Error>> {
-    let host = cpal::default_host();
-    // Récupérer tous les périphériques d'entrée disponibles
-    let devices = host.input_devices()?;
-
-    // Afficher les périphériques disponibles
-    println!("Périphériques d'entrée disponibles:");
-    for (i, device) in devices.enumerate() {
-      println!("{}: {}", i, device.name()?);
-    }
-
-    // Permettre à l'utilisateur de sélectionner un périphérique
-    let device = match std::io::stdin()
-      .lines()
-      .next()
-      .and_then(|line| line.ok())
-      .and_then(|line| line.parse::<usize>().ok())
-      .and_then(|index| host.input_devices().ok()?.nth(index))
-    {
-      Some(device) => device,
-      None => {
-        println!("Sélection non valide, utilisation du périphérique par défaut.");
-        host.default_input_device()
-          .ok_or("Aucun périphérique d'entrée trouvé")?
-      }
-    };
-
-    println!("Utilisation du périphérique: {}", device.name()?);
+pub async fn capture_audio(device: &Device) -> Result<Vec<f32>, Box<dyn Error>> {
     let config = device.default_input_config()?;
 
     let sample_format = config.sample_format();
@@ -77,4 +51,36 @@ pub async fn capture_audio() -> Result<Vec<f32>, Box<dyn Error>> {
 
 fn err_fn(err: cpal::StreamError) {
     eprintln!("Stream error: {}", err);
+}
+
+pub fn get_device() -> Result<Device, Box<dyn Error>> {
+    let host = cpal::default_host();
+    // Récupérer tous les périphériques d'entrée disponibles
+    let devices = host.input_devices()?;
+
+    // Afficher les périphériques disponibles
+    println!("Périphériques d'entrée disponibles:");
+    for (i, device) in devices.enumerate() {
+        println!("{}: {}", i, device.name()?);
+    }
+
+    // Permettre à l'utilisateur de sélectionner un périphérique
+    let device = match std::io::stdin()
+        .lines()
+        .next()
+        .and_then(|line| line.ok())
+        .and_then(|line| line.parse::<usize>().ok())
+        .and_then(|index| host.input_devices().ok()?.nth(index))
+    {
+        Some(device) => device,
+        None => {
+            println!("Sélection non valide, utilisation du périphérique par défaut.");
+            host.default_input_device()
+                .ok_or("Aucun périphérique d'entrée trouvé")?
+        }
+    };
+
+    println!("Utilisation du périphérique: {}", device.name()?);
+
+    Ok(device)
 }
