@@ -11,7 +11,7 @@ pub fn start_languagetool_server() -> Child {
     let child = Command::new("java")
         .args([
             "-cp",
-            "tools/LanguageTool-6.6-SNAPSHOT/*:tools/LanguageTool-6.6-SNAPSHOT/libs/*",
+            "tools/LanguageTool-6.6-SNAPSHOT/languagetool-server.jar",
             "org.languagetool.server.HTTPServer",
             "--port",
             "8081",
@@ -118,18 +118,14 @@ pub fn clean_whisper_text(original: &str) -> String {
     let mut clean = re_beg.replace_all(original, "").to_string();
     clean = re_tt.replace_all(&clean, "").to_string();
 
-    // Nettoyer les espaces en trop (doubles espaces, avant les points, etc.)
-    clean = clean.replace(" .", ".");
-    clean = clean.replace(" ,", ",");
-    clean = clean.replace(" !", "!");
-    clean = clean.replace(" ?", "?");
-
     // Retirer les espaces multiples
     let re_spaces = Regex::new(r"\s+").unwrap();
     clean = re_spaces.replace_all(&clean, " ").to_string();
 
-    // Correction grammaticale et reconstruction avec Burt
+    println!("Texte avant correction : {}", clean);
+    // Appel à l'API LanguageTool
     let corrected = burt_correct_text(clean.trim());
+    println!("Texte après correction : {}", corrected);
     corrected
 }
 
@@ -169,14 +165,19 @@ pub fn burt_correct_text(text: &str) -> String {
     let lt_response: LTResponse = serde_json::from_str(&body).unwrap();
 
     let mut corrected = text.to_string();
-    let mut offset_correction: isize = 0;
-
-    for m in lt_response.matches {
+    // Sort corrections descending by offset to apply without affecting subsequent indices.
+    let mut matches = lt_response.matches;
+    matches.sort_by(|a, b| b.offset.cmp(&a.offset));
+    for m in matches {
         if let Some(replacement) = m.replacements.first() {
-            let start = (m.offset as isize + offset_correction) as usize;
-            let end = start + m.length;
+            // Convert character offset and length to byte indices.
+            let start = corrected.char_indices().nth(m.offset)
+                .map(|(byte_idx, _)| byte_idx)
+                .unwrap_or(0);
+            let end = corrected.char_indices().nth(m.offset + m.length)
+                .map(|(byte_idx, _)| byte_idx)
+                .unwrap_or_else(|| corrected.len());
             corrected.replace_range(start..end, &replacement.value);
-            offset_correction += replacement.value.len() as isize - m.length as isize;
         }
     }
 

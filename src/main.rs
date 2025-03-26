@@ -160,3 +160,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+
+    #[test]
+
+    // fn test_start_languagetool_server() {
+    //     let server = whisper_integration::start_languagetool_server();
+    //     assert!(server.is_ok());
+
+    // }
+    fn test_burt_correct_text() {
+        let server = whisper_integration::start_languagetool_server();
+        let text = "bonjour, com ment ça va ?";
+        let result = whisper_integration::clean_whisper_text(text);
+        assert_eq!(result, "Bonjour, comment ça va ?");
+    }
+
+    // fn test_wakeword_detection() {
+    //     let state = whisper_integration::init_model("./models/ggml-small.bin").unwrap();
+    //     let audio_data = vec![0.0; 16000]; // Dummy audio data
+    //     let result = wakeword::is_wake_word_present_sync(&state, 0).unwrap();
+    //     assert_eq!(result, false);
+    // }
+
+}
