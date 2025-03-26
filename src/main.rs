@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
 use tokio::task::LocalSet;
 
 pub mod actions;
@@ -6,6 +8,11 @@ pub mod bert;
 pub mod config;
 mod wakeword;
 pub mod whisper_integration;
+pub mod dawg_loader;
+
+pub static DAWGS: Lazy<HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>> = Lazy::new(|| {
+    dawg_loader::load_dawgs()
+});
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 

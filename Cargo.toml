@@ -21,3 +21,4 @@ once_cell = "1.21.1"
 regex = "1.11.1"
 ureq = { version = "3.0.10", features = ["json"] }
 urlencoding = "2.1.3"
+daachorse = "1.0.0"

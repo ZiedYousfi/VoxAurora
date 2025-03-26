@@ -1,3 +1,5 @@
+use daachorse::DoubleArrayAhoCorasick;
+use regex::Regex;
 use serde::Deserialize;
 use std::error::Error;
 use std::process::{Child, Command};
@@ -124,7 +126,8 @@ pub fn clean_whisper_text(original: &str) -> String {
 
     println!("Texte avant correction : {}", clean);
     // Appel à l'API LanguageTool
-    let corrected = burt_correct_text(clean.trim());
+    let lang_tooled = burt_correct_text(clean.trim());
+    let corrected = merge_separated_words_dawg_regex(&lang_tooled, 3);
     println!("Texte après correction : {}", corrected);
     corrected
 }
@@ -171,10 +174,14 @@ pub fn burt_correct_text(text: &str) -> String {
     for m in matches {
         if let Some(replacement) = m.replacements.first() {
             // Convert character offset and length to byte indices.
-            let start = corrected.char_indices().nth(m.offset)
+            let start = corrected
+                .char_indices()
+                .nth(m.offset)
                 .map(|(byte_idx, _)| byte_idx)
                 .unwrap_or(0);
-            let end = corrected.char_indices().nth(m.offset + m.length)
+            let end = corrected
+                .char_indices()
+                .nth(m.offset + m.length)
                 .map(|(byte_idx, _)| byte_idx)
                 .unwrap_or_else(|| corrected.len());
             corrected.replace_range(start..end, &replacement.value);
@@ -182,4 +189,52 @@ pub fn burt_correct_text(text: &str) -> String {
     }
 
     corrected
+}
+
+/// Fusionne jusqu'à `max_merge` mots consécutifs s'ils forment un mot valide dans le DAWG.
+/// Exemple : "au jourd hui" → "aujourd'hui"
+pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String {
+    let re = Regex::new(r"\b\w+\b").unwrap();
+    let mut tokens: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
+    let mut result = Vec::new();
+    let mut i = 0;
+
+    while i < tokens.len() {
+        let mut merged = None;
+
+        // Essaie de fusionner jusqu'à `max_merge` mots
+        for merge_len in (2..=max_merge).rev() {
+            if i + merge_len <= tokens.len() {
+                let attempt = tokens[i..i + merge_len].join("");
+                if super::DAWGS
+                    .values()
+                    .any(|dawg| dawg.find_iter(&attempt).next().is_some())
+                {
+                    merged = Some((attempt, merge_len));
+                    break;
+                }
+            }
+        }
+
+        if let Some((word, count)) = merged {
+            result.push(word);
+            i += count;
+        } else {
+            result.push(tokens[i].to_string());
+            i += 1;
+        }
+    }
+
+    // On reconstruit la phrase avec les espaces d'origine (approximatif mais fluide)
+    let re_space = Regex::new(r"\s+").unwrap();
+    let mut _raw_parts = re_space.split(text).filter(|s| !s.trim().is_empty());
+    let mut output = String::new();
+    for word in result {
+        if !output.is_empty() {
+            output.push(' ');
+        }
+        output.push_str(&word);
+    }
+
+    output
 }
