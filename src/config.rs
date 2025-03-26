@@ -3,19 +3,27 @@ use serde::Deserialize;
 use std::error::Error;
 use std::fs;
 
-#[derive(Deserialize)]
+impl AsRef<str> for Command {
+    fn as_ref(&self) -> &str {
+        &self.trigger
+    }
+}
+
+#[derive(Deserialize, Clone)]
 pub struct Command {
     pub trigger: String,
     pub action: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub commands: Vec<Command>,
 }
 
 pub fn load_config(paths: Vec<String>) -> Result<Config, Box<dyn Error>> {
-    let mut combined_config = Config { commands: Vec::new() };
+    let mut combined_config = Config {
+        commands: Vec::new(),
+    };
     let mut seen_triggers = std::collections::HashSet::new();
 
     for path in paths {
@@ -23,7 +31,7 @@ pub fn load_config(paths: Vec<String>) -> Result<Config, Box<dyn Error>> {
             Ok(data) => {
                 match serde_json::from_str::<Config>(&data) {
                     Ok(config) => {
-                        // Check for duplicate triggers
+                        // Vérifie les doublons de trigger
                         for command in &config.commands {
                             let trigger_lower = command.trigger.to_lowercase();
                             if !seen_triggers.insert(trigger_lower) {
@@ -32,15 +40,15 @@ pub fn load_config(paths: Vec<String>) -> Result<Config, Box<dyn Error>> {
                             }
                         }
 
-                        // Append commands from this config file
+                        // Ajoute les commandes de ce fichier de config
                         combined_config.commands.extend(config.commands);
                         println!("Loaded config from: {}", path);
-                    },
+                    }
                     Err(e) => {
                         eprintln!("Error parsing config file {}: {}", path, e);
                     }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Error reading config file {}: {}", path, e);
             }
@@ -54,42 +62,50 @@ pub fn load_config(paths: Vec<String>) -> Result<Config, Box<dyn Error>> {
     Ok(combined_config)
 }
 
-pub fn execute_command(config: &Config, transcription: String) -> Result<(), Box<dyn Error>> {
-    // Get words as a list
-    let words: Vec<&str> = transcription.split_whitespace().collect();
-
-    println!("Word list:");
-    let mut result = String::new();
-
-    // Build the complete phrase
-    for (i, word) in words.iter().enumerate() {
-        println!("Word {}: {}", i, word);
-        result.push_str(word);
-        result.push(' ');
-    }
-
-    // Check if the phrase contains a trigger
-    let mut command_triggered = false;
-    for command in &config.commands {
-        if result.to_lowercase().contains(&command.trigger.to_lowercase()) {
-            command_triggered = true;
-            println!("Command trigger detected: {}", command.trigger);
-            println!("Action: {}", command.action);
-
-            // Execute the command
-            match actions::execute_action(&command.action) {
-                Ok(_) => println!("Command executed successfully"),
-                Err(e) => eprintln!("Failed to execute command: {}", e),
+pub async fn execute_command(
+    config: &Config,
+    transcription: String,
+) -> Result<(), Box<dyn std::error::Error + Send>> {
+    // On délègue les opérations bloquantes
+    let handle = tokio::task::spawn_blocking({
+        let transcription = transcription.clone();
+        let config = config.clone(); // Assurez-vous que Config implémente Clone ou adaptez la logique
+        move || -> Result<(), Box<dyn std::error::Error + Send>> {
+            // Utilisation de la fonction find_best_action dans bert.rs
+            match crate::bert::find_best_match(&transcription, &config.commands).map_err(
+                |e| -> Box<dyn std::error::Error + Send> {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("{}", e),
+                    ))
+                },
+            )? {
+                Some((command, best_score)) => {
+                    println!(
+                        "\u{2728} Command detected: {} (score = {:.3})",
+                        command.trigger, best_score
+                    );
+                    match actions::execute_action(&command.action) {
+                        Ok(_) => println!("Command executed successfully"),
+                        Err(e) => eprintln!("Failed to execute command: {}", e),
+                    }
+                }
+                None => {
+                    println!("No matching command found. Executing raw text.");
+                    if let Err(e) = actions::execute_enigo_text(transcription.clone()) {
+                        eprintln!("Failed to execute text input: {}", e);
+                    }
+                }
             }
+            Ok(())
         }
-    }
+    });
 
-    // If no trigger was detected, execute text input once
-    if !command_triggered {
-        if let Err(e) = actions::execute_enigo_text(result.clone()) {
-            eprintln!("Failed to execute text input: {}", e);
-        }
-    }
-
-    Ok(())
+    // Attente de la fin de l'opération bloquante.
+    handle.await.map_err(|e| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Task join error: {}", e),
+        )) as Box<dyn std::error::Error + Send>
+    })?
 }
