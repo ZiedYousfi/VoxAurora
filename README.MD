@@ -11,14 +11,16 @@ A magical voice command recognition system built in Rust that uses OpenAI's Whis
 - 🔮 "Wake word" functionality to toggle system activity
 - 🌍 Multi-language support (currently configured for French)
 - ⌨️ Text input simulation and shell command execution capabilities
+- 🧠 BERT embeddings for intelligent command matching
 
 ## 🔧 Requirements
 
 - 🦀 Rust (latest stable version)
 - 🤫 [whisper-rs](https://github.com/tazz4843/whisper-rs) dependencies
-- 📚 Whisper model file (e.g., `ggml-medium.bin`)
+- 📚 Whisper model file (e.g., `ggml-small.bin`)
 - 🖱️ Enigo library for text input simulation
 - 🎵 Rubato library for audio resampling
+- 🤖 rust-bert for semantic command matching
 
 ## 📁 Project Structure
 
@@ -28,12 +30,13 @@ A magical voice command recognition system built in Rust that uses OpenAI's Whis
 - `src/actions.rs` - 🚀 Command execution (shell and text input)
 - `src/whisper_integration.rs` - 🤖 Integration with Whisper speech recognition
 - `src/wakeword.rs` - 🔮 Wake word detection to toggle system activity
+- `src/bert.rs` - 🧠 Sentence embeddings for better command matching
 
 ## 🚀 Setup
 
 1. 📥 Clone the repository
-2. 🧠 Download a Whisper model file and place it in the `models/` directory
-3. ⚙️ Create a `config.json` file with your custom commands
+2. 🧠 Download a [Whisper model](https://huggingface.co/ggerganov/whisper.cpp/tree/main) file and place it in the `models/` directory
+3. ⚙️ Create configuration files in the `configs/` directory
 4. 📦 Install dependencies: `cargo build`
 
 ## 🎮 Usage
@@ -43,8 +46,8 @@ cargo run
 ```
 
 The application will:
-1. 🔍 Prompt for Whisper model path (defaults to './models/ggml-medium.bin')
-2. 📋 Prompt for configuration file path (defaults to 'config.json')
+1. 🔍 Prompt for Whisper model path (defaults to './models/ggml-small.bin')
+2. 📋 Prompt for configuration file paths (you can add multiple configs, type 'done' when finished)
 3. 🎤 Show available audio input devices and prompt for selection
 4. 👂 Start listening continuously for voice commands
 5. ✨ Activate when the wake word "aurora" is detected
@@ -52,18 +55,22 @@ The application will:
 
 ## ⚙️ Configuration
 
-Commands are defined in `config.json`:
+Commands are defined in JSON configuration files:
 
 ```json
 {
   "commands": [
     {
-      "trigger": "test",
-      "action": "lancer_chrome"
+      "trigger": "open browser",
+      "action": "cmd:google-chrome"
     },
     {
-      "trigger": "lancer terminal",
+      "trigger": "open terminal",
       "action": "cmd:gnome-terminal"
+    },
+    {
+      "trigger": "write hello world",
+      "action": "Hello, World!"
     }
   ]
 }
@@ -81,6 +88,9 @@ Many more features are planned for VoxAurora. Stay tuned for updates! 🌟
 - 🎛️ Audio downsampling from 44.1kHz to 16kHz for Whisper compatibility
 - 🔮 Wake word system to toggle between active and sleeping modes
 - 🧙‍♀️ Support for both text input simulation and system command execution
+- 🧠 Semantic matching using BERT embeddings to understand command intent
+- 🌐 Multiple configuration files support for better organization
+- 🔎 Fuzzy command matching with similarity scoring
 
 ## 💖 The Magic of VoxAurora
 
