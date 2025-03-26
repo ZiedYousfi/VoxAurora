@@ -16,3 +16,5 @@
 *.sublime-project
 /models/*
 VoxAurora
+/configs/*
+!/configs/base_config.json

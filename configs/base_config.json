@@ -1,16 +1,52 @@
 {
   "commands": [
     {
-      "trigger": "test",
-      "action": "lancer_chrome"
+      "trigger": "lance chrome",
+      "action": "cmd:open -a 'Google Chrome'"
     },
     {
-      "trigger": "[Silence]",
-      "action": "ouvrir_terminal"
+      "trigger": "lance terminal",
+      "action": "cmd:open -a Terminal"
     },
     {
-      "trigger": "[Propos inaudibles]",
-      "action": "lancer_chrome"
+      "trigger": "lance code",
+      "action": "cmd:open -a 'Visual Studio Code'"
+    },
+    {
+      "trigger": "vérifie git",
+      "action": "cmd:git status"
+    },
+    {
+      "trigger": "sauvegarde changements",
+      "action": "cmd:git commit -m 'Quick commit via voice'"
+    },
+    {
+      "trigger": "envoie changements",
+      "action": "cmd:git push"
+    },
+    {
+      "trigger": "teste code",
+      "action": "cmd:npm test"
+    },
+    {
+      "trigger": "lance serveur",
+      "action": "cmd:npm start"
+    },
+    {
+      "trigger": "fais build",
+      "action": "cmd:npm run build"
+    },
+    {
+      "trigger": "ajoute debug",
+      "action": "console.log('Debug:', );"
+    },
+    {
+      "trigger": "vérifie docker",
+      "action": "cmd:docker ps"
+    },
+    {
+      "trigger": "nettoie écran",
+      "action": "cmd:clear"
     }
   ]
 }
