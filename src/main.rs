@@ -46,9 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Enter the path to config file (or press Enter for default 'config.json'):");
         let mut config_path: Vec<String> = Vec::new();
-        let mut config_path_input = String::new();
 
         loop {
+            let mut config_path_input = String::new();
             std::io::stdin()
                 .read_line(&mut config_path_input)
                 .expect("Failed to read input");
