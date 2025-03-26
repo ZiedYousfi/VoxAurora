@@ -57,7 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             let config_path_input = config_path_input.trim().to_string();
-            config_path.push(config_path_input);
+            if !config_path_input.is_empty(){
+                config_path.push(config_path_input);
+            }
 
         }
 
