@@ -45,21 +45,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Load user configuration
         // Get the config path from terminal input or use default
         println!("Enter the path to config file (or press Enter for default 'config.json'):");
-        let mut config_path = String::new();
-        std::io::stdin()
-            .read_line(&mut config_path)
-            .expect("Failed to read input");
-        let config_path = config_path.trim();
+        let mut config_path: Vec<String> = Vec::new();
+        let mut config_path_input = String::new();
+
+        loop {
+
+            std::io::stdin()
+                .read_line(&mut config_path_input)
+                .expect("Failed to read input");
+            if config_path_input.trim() == "done" {
+                break;
+            }
+            let config_path_input = config_path_input.trim().to_string();
+            config_path.push(config_path_input);
+
+        }
 
         // Use default if input is empty
-        let config_path = if config_path.is_empty() {
-            "config.json".to_string()
-        } else {
-            config_path.to_string()
-        };
+        if config_path.is_empty() {
+            config_path.push("config.json".to_string());
+        }
 
-        println!("Loading config from: {}", config_path);
-        let config = match config::load_config(&config_path) {
+        println!("Loading config from: {:?}", config_path);
+        let config = match config::load_config(config_path) {
             Ok(config) => config,
             Err(e) => {
                 eprintln!("Error loading config: {}", e);
