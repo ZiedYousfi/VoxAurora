@@ -8,13 +8,13 @@ use tokio::sync::mpsc;
 
 const SILENCE_THRESHOLD: f32 = 0.01;
 const MAX_SPEECH_DURATION: Duration = Duration::from_secs(10);
-const SILENCE_DURATION_TO_FINALIZE: Duration = Duration::from_millis(200);
+const SILENCE_DURATION_TO_FINALIZE: Duration = Duration::from_millis(1000);
 
 pub struct AudioProcessor {
     pub device: Device,
     sender: mpsc::Sender<Vec<f32>>,
     receiver: mpsc::Receiver<Vec<f32>>,
-    // Stockage du signal d'arrêt
+    // Storage for the stop signal
     keep_alive_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
@@ -35,25 +35,25 @@ impl AudioProcessor {
         let config = config.into();
         let sender = self.sender.clone();
 
-        // Buffer pour accumuler les échantillons audio
+        // Buffer to accumulate audio samples
         let audio_data = Arc::new(Mutex::new(Vec::new()));
         let audio_data_clone = audio_data.clone();
 
-        // Canal pour signaler l'arrêt du stream
+        // Channel to signal stream stop
         let (keep_alive_tx, _keep_alive_rx) = tokio::sync::oneshot::channel::<()>();
         {
             let mut tx_lock = self.keep_alive_tx.lock().unwrap();
             *tx_lock = Some(keep_alive_tx);
         }
 
-        let stream = match sample_format {
+        let _stream = match sample_format {
             cpal::SampleFormat::F32 => self.device.build_input_stream(
                 &config,
                 move |data: &[f32], _| {
                     if let Ok(mut buffer) = audio_data_clone.lock() {
                         buffer.extend_from_slice(data);
 
-                        // Dès qu'on accumule assez d'échantillons, on envoie un chunk pour traitement
+                        // As soon as enough samples are accumulated, send a chunk for processing
                         if buffer.len() > 4096 {
                             let chunk = buffer.clone();
                             buffer.clear();
@@ -95,7 +95,7 @@ impl AudioProcessor {
     // }
 
     pub async fn get_next_speech_segment(&mut self) -> Result<Vec<f32>, Box<dyn Error>> {
-        // Récupère le nombre de canaux depuis la config par défaut
+        // Get the number of channels from the default config
         let channels = self.device.default_input_config()?.channels() as usize;
         let mut is_speech_active = false;
         let mut speech_buffer = Vec::new();
@@ -117,7 +117,6 @@ impl AudioProcessor {
                 speech_buffer.extend_from_slice(&chunk);
                 if silence_start.elapsed() > SILENCE_DURATION_TO_FINALIZE {
                     println!("🔇 Speech segment complete");
-                    is_speech_active = false;
                     let resampled = resample_to_16k(&speech_buffer, channels);
                     return Ok(resampled);
                 }
@@ -125,7 +124,6 @@ impl AudioProcessor {
 
             if is_speech_active && speech_start.elapsed() > MAX_SPEECH_DURATION {
                 println!("⏱️ Maximum speech duration reached");
-                is_speech_active = false;
                 let resampled = resample_to_16k(&speech_buffer, channels);
                 return Ok(resampled);
             }
@@ -170,7 +168,7 @@ fn resample_to_16k(input: &[f32], channels: usize) -> Vec<f32> {
 
     // Create a resampler for mono (1 channel) with chunk size 1323
     let mut resampler = rubato::FftFixedInOut::<f32>::new(44100, 16000, 1323, 1)
-        .expect("Erreur lors de la création du resampler");
+        .expect("Error creating resampler");
 
     let mut output = Vec::new();
 
@@ -190,3 +188,13 @@ fn resample_to_16k(input: &[f32], channels: usize) -> Vec<f32> {
     }
     output
 }
+
+// fn pad_segment(mut segment: Vec<f32>) -> Vec<f32> {
+//     // Whisper requires at least 1 second of audio at 16kHz = 16000 samples.
+//     const MIN_SAMPLES: usize = 16000;
+//     if segment.len() < MIN_SAMPLES {
+//         let missing = MIN_SAMPLES - segment.len();
+//         segment.extend(vec![0.0; missing]);
+//     }
+//     segment
+// }

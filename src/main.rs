@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Use default if input is empty
         let model_path = if model_path.is_empty() {
-            "./models/ggml-medium.bin".to_string()
+            "./models/ggml-small.bin".to_string()
         } else {
             model_path.to_string()
         };
@@ -90,6 +90,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
+
+
+            // Prepare minimal parameters for analysis (similar to transcription)
+            let mut wake_params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::default());
+            wake_params.set_print_special(false);
+            wake_params.set_print_progress(false);
+            wake_params.set_print_realtime(false);
+            wake_params.set_language(Some("fr")); // or leave None as needed
+
+            // Create and process the state for the current audio
+            let mut wake_state = whisper_model.create_state().expect("msg");
+            if let Err(e) = wake_state.full(wake_params, &audio_data) {
+                eprintln!("Error processing audio data for wake word detection: {}", e);
+                continue;
+            }
+
+            // Check for the wake word in the first segment
+            match wakeword::is_wake_word_present(&wake_state, 0) {
+                Ok(true) => {
+                    awake = !awake;
+                    println!("System is now {}", if awake { "awake" } else { "sleeping" });
+                },
+                Ok(false) => {},
+                Err(e) => eprintln!("Error during wake word detection: {}", e),
+            }
+
+
             let transcription = match whisper_integration::transcribe(&whisper_model, &audio_data, "fr").await {
                 Ok(text) => text,
                 Err(e) => {
@@ -106,10 +133,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", &transcription);
             println!("---------------------------------------------------");
 
-            if wakeword::is_wake_word_triggered(&transcription) {
-                awake = !awake;
-                println!("System is now {}", if awake { "awake" } else { "sleeping" });
-            }
 
             if awake {
                 // Analyze and map the command via the JSON
