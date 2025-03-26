@@ -10,6 +10,7 @@ dependencies = [
  "enigo",
  "once_cell",
  "realfft",
+ "regex",
  "rubato",
  "rust-bert",
  "serde",

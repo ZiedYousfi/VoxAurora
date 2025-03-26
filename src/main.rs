@@ -5,7 +5,7 @@ mod audio;
 pub mod bert;
 pub mod config;
 mod wakeword;
-mod whisper_integration;
+pub mod whisper_integration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the current-thread runtime manually
@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             wake_params.set_print_special(false);
             wake_params.set_print_progress(false);
             wake_params.set_print_realtime(false);
+            wake_params.set_token_timestamps(false);
             wake_params.set_language(Some("fr"));
 
             let mut wake_state = whisper_model.create_state().expect("msg");
