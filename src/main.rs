@@ -8,6 +8,11 @@ mod wakeword;
 pub mod whisper_integration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    let mut _server = whisper_integration::start_languagetool_server();
+
+    bert::get_model();
+
     // Build the current-thread runtime manually
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -18,6 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Run the async block until completion using block_on
     rt.block_on(local.run_until(async {
         let mut awake = false;
+
 
         println!(
             "Enter the path to Whisper model (or press Enter for default './models/ggml-medium.bin'):"
@@ -143,9 +149,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
             };
-
         }
     }));
 
+    // Wait for the languagetool server process to finish
+    if let Ok(exit_status) = _server.wait() {
+        println!("LanguageTool server exited with status: {}", exit_status);
+    }
+
     Ok(())
+
 }

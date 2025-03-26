@@ -1,5 +1,62 @@
+use serde::Deserialize;
 use std::error::Error;
+use std::process::{Child, Command};
+use std::thread;
+use std::time::Duration;
+use ureq;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+/// Lance le serveur LanguageTool en arrière-plan et attend que ce dernier soit opérationnel
+pub fn start_languagetool_server() -> Child {
+    let child = Command::new("java")
+        .args([
+            "-cp",
+            "tools/LanguageTool-6.6-SNAPSHOT/*:tools/LanguageTool-6.6-SNAPSHOT/libs/*",
+            "org.languagetool.server.HTTPServer",
+            "--port",
+            "8081",
+        ])
+        .spawn()
+        .expect("Échec du démarrage de LanguageTool");
+
+    // Attendre que le serveur soit opérationnel
+    wait_for_languagetool_server().expect("Le serveur LanguageTool n'est pas démarré");
+    child
+}
+
+/// Vérifie que le serveur LanguageTool répond sur l'endpoint /v2/check
+fn wait_for_languagetool_server() -> Result<(), Box<dyn Error>> {
+    let base_url = "http://localhost:8081/v2/check";
+    let mut attempts = 0;
+    while attempts < 10 {
+        let request_url = format!(
+            "{}?language={}&text={}",
+            base_url,
+            "fr-FR",
+            urlencoding::encode("Bonjour")
+        );
+        let response_result = ureq::get(&request_url)
+            .header("Accept", "application/json")
+            .call();
+        match response_result {
+            Ok(response) if response.status() == 200 => return Ok(()),
+            Ok(response) => {
+                println!(
+                    "Le serveur LanguageTool n'est pas encore opérationnel, tentative {}...",
+                    attempts + 1
+                );
+                println!("reponse: {:?}", response);
+                println!("status: {:?}", response.status());
+            }
+            Err(err) => {
+                println!("Erreur lors de l'envoi de la requête: {:?}", err);
+            }
+        }
+        attempts += 1;
+        thread::sleep(Duration::from_secs(1));
+    }
+    Err("LanguageTool server did not start in time".into())
+}
 
 pub fn init_model(path_to_model: String) -> Result<WhisperContext, Box<dyn Error>> {
     let ctx = WhisperContext::new_with_params(&path_to_model, WhisperContextParameters::default())?;
@@ -62,7 +119,6 @@ pub fn clean_whisper_text(original: &str) -> String {
     clean = re_tt.replace_all(&clean, "").to_string();
 
     // Nettoyer les espaces en trop (doubles espaces, avant les points, etc.)
-    // Par exemple :
     clean = clean.replace(" .", ".");
     clean = clean.replace(" ,", ",");
     clean = clean.replace(" !", "!");
@@ -72,5 +128,57 @@ pub fn clean_whisper_text(original: &str) -> String {
     let re_spaces = Regex::new(r"\s+").unwrap();
     clean = re_spaces.replace_all(&clean, " ").to_string();
 
-    clean.trim().to_string()
+    // Correction grammaticale et reconstruction avec Burt
+    let corrected = burt_correct_text(clean.trim());
+    corrected
+}
+
+#[derive(Debug, Deserialize)]
+struct Match {
+    message: String,
+    replacements: Vec<Replacement>,
+    offset: usize,
+    length: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct Replacement {
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LTResponse {
+    matches: Vec<Match>,
+}
+
+pub fn burt_correct_text(text: &str) -> String {
+    let base_url = "http://localhost:8081/v2/check";
+    let request_url = format!(
+        "{}?language={}&text={}",
+        base_url,
+        "fr",
+        urlencoding::encode(text)
+    );
+    let body: String = ureq::get(&request_url)
+        .header("Accept", "application/json")
+        .call()
+        .unwrap()
+        .body_mut()
+        .read_to_string()
+        .unwrap();
+    let lt_response: LTResponse = serde_json::from_str(&body).unwrap();
+
+    let mut corrected = text.to_string();
+    let mut offset_correction: isize = 0;
+
+    for m in lt_response.matches {
+        if let Some(replacement) = m.replacements.first() {
+            let start = (m.offset as isize + offset_correction) as usize;
+            let end = start + m.length;
+            corrected.replace_range(start..end, &replacement.value);
+            offset_correction += replacement.value.len() as isize - m.length as isize;
+        }
+    }
+
+    corrected
 }

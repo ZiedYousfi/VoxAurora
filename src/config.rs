@@ -69,9 +69,8 @@ pub async fn execute_command(
     // On délègue les opérations bloquantes
     let handle = tokio::task::spawn_blocking({
         let transcription = transcription.clone();
-        let config = config.clone(); // Assurez-vous que Config implémente Clone ou adaptez la logique
+        let config = config.clone();
         move || -> Result<(), Box<dyn std::error::Error + Send>> {
-            // Utilisation de la fonction find_best_action dans bert.rs
             match crate::bert::find_best_match(&transcription, &config.commands).map_err(
                 |e| -> Box<dyn std::error::Error + Send> {
                     Box::new(std::io::Error::new(

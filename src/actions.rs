@@ -22,7 +22,7 @@ pub fn execute_action(input: &str) -> Result<(), Box<dyn Error>> {
 pub fn execute_enigo_text(action: String) -> Result<(), Box<dyn Error>> {
     let enigo_result = Enigo::new(&enigo::Settings::default());
     match enigo_result {
-        Ok(mut enigo) => match enigo.text(&(action.clone() + " ")) {
+        Ok(mut enigo) => match enigo.text(&(action.clone())) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to execute key sequence: {}", e).into()),
         },

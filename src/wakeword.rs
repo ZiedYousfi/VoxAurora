@@ -88,7 +88,7 @@ const WAKE_VARIANTS: &[&str; 12] = &[
 //const TOKEN_PROB_THRESHOLD: f32 = 0.3;
 
 /// Seuil de similarité cosine pour considérer une correspondance d'embeddings
-const EMBEDDING_SIMILARITY_THRESHOLD: f32 = 0.75;
+const EMBEDDING_SIMILARITY_THRESHOLD: f32 = 0.7;
 
 /// Pré-calcule les embeddings pour chaque wake word
 static WAKE_VARIANTS_EMBEDDINGS: Lazy<Vec<Vec<f32>>> = Lazy::new(|| {
