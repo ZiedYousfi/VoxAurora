@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Use default if input is empty
         if config_path.is_empty() {
-            config_path.push("config.json".to_string());
+            config_path.push("./configs/base_config.json".to_string());
         }
 
         println!("Loading config from: {:?}", config_path);
