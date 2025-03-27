@@ -1,5 +1,5 @@
 /target
-tools/*
+/tools/*
 .DS_Store
 *.log
 /models/*
