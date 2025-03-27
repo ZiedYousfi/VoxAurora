@@ -8,4 +8,4 @@ tools/jdk-24_macos-aarch64_bin.dmg
 /dics/*
 !/dics
 test.rs
-/tools/LanguageTool-6.6-SNAPSHOT/*
+/tools/
