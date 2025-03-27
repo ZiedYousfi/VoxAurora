@@ -1,11 +1,10 @@
 /target
+tools/*
 .DS_Store
 *.log
 /models/*
 !/models
 VoxAurora
-tools/jdk-24_macos-aarch64_bin.dmg
 /dics/*
 !/dics
 test.rs
-/tools/
