@@ -73,3 +73,16 @@ fn parse_hunspell_dic(content: &str) -> Vec<String> {
 
     words
 }
+
+/// Vérifie si un mot `word` est exactement présent dans l'automate,
+/// et non juste une sous-partie de mots plus longs.
+pub fn contains_exact(dawg: &DoubleArrayAhoCorasick<u32>, word: &str) -> bool {
+    // On vérifie que `word` est exactement une correspondance trouvée
+    for m in dawg.find_iter(word) {
+        // Vérifie si le match couvre toute la chaîne (du début à la fin)
+        if m.start() == 0 && m.end() == word.len() {
+            return true;
+        }
+    }
+    false
+}

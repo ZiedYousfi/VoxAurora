@@ -1,4 +1,5 @@
 /target
+.pr
 /tools/*
 .DS_Store
 *.log

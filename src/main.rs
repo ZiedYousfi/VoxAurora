@@ -214,9 +214,10 @@ mod tests {
         let merged = whisper_integration::merge_separated_words_dawg_regex(input_text, 4);
         // Check that the merged text now contains "aujourd'hui".
         // Depending on DAWG configuration, the merge might not occur if the entry is missing.
-        // Assert either the merge happened or the original is unchanged.
+        // Assert either the merge happened.
+        println!("Merged text: '{}'", merged);
         assert!(
-            merged.contains("aujourd'hui") || merged == input_text,
+            merged.contains("aujourd'hui"),
             "Merged text: '{}'",
             merged
         );
