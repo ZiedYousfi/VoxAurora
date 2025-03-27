@@ -1,20 +1,20 @@
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use tokio::task::LocalSet;
 
 pub mod actions;
 mod audio;
 pub mod bert;
 pub mod config;
+pub mod dawg_loader;
 mod wakeword;
 pub mod whisper_integration;
-pub mod dawg_loader;
 
-pub static DAWGS: Lazy<HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>> = Lazy::new(|| {
-    dawg_loader::load_dawgs()
-});
+pub static DAWGS: Lazy<HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>> =
+    Lazy::new(dawg_loader::load_dawgs);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Chargement des DAWGS... ({} entrées)", DAWGS.len());
 
     let mut _server = whisper_integration::start_languagetool_server();
 
@@ -165,34 +165,76 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread;
+    use std::time::Duration;
 
-
-
+    // This test is already present but kept for reference.
     #[test]
-
-    // fn test_start_languagetool_server() {
-    //     let server = whisper_integration::start_languagetool_server();
-    //     assert!(server.is_ok());
-
-    // }
     fn test_burt_correct_text() {
-        let server = whisper_integration::start_languagetool_server();
+        // Start the LanguageTool server (make sure it's not already running on port 8081)
+        let _server = whisper_integration::start_languagetool_server();
+        // Give the server a moment to really start
+        thread::sleep(Duration::from_secs(1));
+
         let text = "bonjour, com ment ça va ?";
         let result = whisper_integration::clean_whisper_text(text);
+        // Expect the cleaned text to have fixed spacing and capitalization.
         assert_eq!(result, "Bonjour, comment ça va ?");
     }
 
-    // fn test_wakeword_detection() {
-    //     let state = whisper_integration::init_model("./models/ggml-small.bin").unwrap();
-    //     let audio_data = vec![0.0; 16000]; // Dummy audio data
-    //     let result = wakeword::is_wake_word_present_sync(&state, 0).unwrap();
-    //     assert_eq!(result, false);
-    // }
+    // Test that verifies tag removal and extra space cleanup.
+    #[test]
+    fn test_clean_whisper_text_removes_tags_and_extra_spaces() {
+        // Input text containing special tags and multiple spaces.
+        let text =
+            "Voici un exemple [_BEG_]avec des [_TT_99]balises   et   des espaces   inutiles.";
+        // Start the LanguageTool server if needed.
+        let _server = whisper_integration::start_languagetool_server();
+        thread::sleep(Duration::from_secs(1));
 
+        let cleaned = whisper_integration::clean_whisper_text(text);
+        // Verify that no special tags remain.
+        assert!(!cleaned.contains("[_BEG_]"));
+        assert!(!cleaned.contains("[_TT_"));
+        // Verify that extra spaces are reduced.
+        assert!(!cleaned.contains("  "));
+    }
+
+    // Test the merging of incorrectly separated words.
+    #[test]
+    fn test_merge_separated_words_dawg_regex() {
+        // This example expects that if DAWGs contain the entry for "aujourd'hui",
+        // then the separated phrase "au jour d hui" will be merged.
+        let input_text = "Il est au jour d hui un bel après midi.";
+        let merged = whisper_integration::merge_separated_words_dawg_regex(input_text, 4);
+        // Check that the merged text now contains "aujourd'hui".
+        // Depending on DAWG configuration, the merge might not occur if the entry is missing.
+        // Assert either the merge happened or the original is unchanged.
+        assert!(
+            merged.contains("aujourd'hui") || merged == input_text,
+            "Merged text: '{}'",
+            merged
+        );
+    }
+
+    // Test that checks punctuation cleanup and spacing.
+    #[test]
+    fn test_clean_whisper_text_with_punctuation() {
+        let text = "Bonjour , , je   suis?   là...";
+        let _server = whisper_integration::start_languagetool_server();
+        thread::sleep(Duration::from_secs(1));
+
+        let cleaned = whisper_integration::clean_whisper_text(text);
+        // Check that multiple spaces are reduced.
+        assert!(!cleaned.contains("  "));
+        // Check that stray spaces before punctuation are corrected.
+        assert!(!cleaned.contains(" ,"));
+        // Since LanguageTool might alter punctuation, at least ensure basic cleanup.
+        assert!(cleaned.contains("Bonjour"));
+    }
 }

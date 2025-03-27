@@ -1,0 +1,193 @@
+{
+  "commands": [
+    {
+      "trigger": "variable",
+      "action": "let"
+    },
+    {
+      "trigger": "fonction",
+      "action": "fn"
+    },
+    {
+      "trigger": "si",
+      "action": "if"
+    },
+    {
+      "trigger": "boucle pour ",
+      "action": "for"
+    },
+    {
+      "trigger": "boucle tant que",
+      "action": "while"
+    },
+    {
+      "trigger": "boucle faire",
+      "action": "loop"
+    },
+    {
+      "trigger": "imprimer",
+      "action": "println!"
+    },
+    {
+      "trigger": "importer",
+      "action": "use"
+    },
+    {
+      "trigger": "égal",
+      "action": "="
+    },
+    {
+      "trigger": "vecteur",
+      "action": "Vec"
+    },
+    {
+      "trigger": "chaîne",
+      "action": "String"
+    },
+    {
+      "trigger": "entier",
+      "action": "i32"
+    },
+    {
+      "trigger": "flottant",
+      "action": "f64"
+    },
+    {
+      "trigger": "booléen",
+      "action": "bool"
+    },
+    {
+      "trigger": "caractère",
+      "action": "char"
+    },
+    {
+      "trigger": "structure",
+      "action": "struct"
+    },
+    {
+      "trigger": "énumération",
+      "action": "enum"
+    },
+    {
+      "trigger": "implémentation",
+      "action": "impl"
+    },
+    {
+      "trigger": "trait",
+      "action": "trait"
+    },
+    {"trigger" : "deux points", "action" : ":"},
+    {
+      "trigger": "point-virgule",
+      "action": ";"
+    },
+    {
+      "trigger": "parenthèses ouvrantes",
+      "action": "("
+    },
+    {
+      "trigger": "parenthèses fermantes",
+      "action": ")"
+    },
+    {
+      "trigger": "accolades ouvrantes",
+      "action": "{"
+    },
+    {
+      "trigger": "accolades fermantes",
+      "action": "}"
+    },
+    {
+      "trigger": "crochets ouvrants",
+      "action": "["
+    },
+    {
+      "trigger": "crochets fermants",
+      "action": "]"
+    },
+    {
+      "trigger": "flèche",
+      "action": "->"
+    },
+    {
+      "trigger": "traitement d'erreur",
+      "action": "Result"
+    },
+    {
+      "trigger": "optionnel",
+      "action": "Option"
+    },
+    {
+      "trigger": "caractères",
+      "action": "&str"
+    },
+    {
+      "trigger": "référence mutable",
+      "action": "&mut"
+    },
+    {
+      "trigger": "référence",
+      "action": "&"
+    },
+    {
+      "trigger": "traiter erreur",
+      "action": "? "
+    },
+    {
+      "trigger": "importer bibliothèque",
+      "action": "#[macro_use]"
+    },
+    {
+      "trigger": "importer bibliothèque externe",
+      "action": "#[macro_use(extern crate)]"
+    },
+    {
+      "trigger": "importer module",
+      "action": "mod"
+    },
+    {
+      "trigger": "importer crate",
+      "action": "extern crate"
+    },
+    {
+      "trigger": "utiliser",
+      "action": "use"
+    },
+    {
+      "trigger": "créer un projet",
+      "action": "cargo new"
+    },
+    {
+      "trigger": "compiler le projet",
+      "action": "cargo build"
+    },
+    {
+      "trigger": "exécuter le projet",
+      "action": "cargo run"
+    },
+    {
+      "trigger": "tester le projet",
+      "action": "cargo test"
+    },
+    {
+      "trigger": "ajouter dépendance",
+      "action": "cargo add"
+    },
+    {
+      "trigger": "mettre à jour dépendance",
+      "action": "cargo update"
+    },
+    {
+      "trigger": "supprimer dépendance",
+      "action": "cargo rm"
+    },
+    {
+      "trigger": "vérifier la version de Rust",
+      "action": "rustc --version"
+    },
+    {
+      "trigger": "vérifier la version de Cargo",
+      "action": "cargo --version"
+    }
+  ]
+}

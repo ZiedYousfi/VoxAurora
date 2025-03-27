@@ -127,7 +127,7 @@ pub fn clean_whisper_text(original: &str) -> String {
     println!("Texte avant correction : {}", clean);
     // Appel à l'API LanguageTool
     let lang_tooled = burt_correct_text(clean.trim());
-    let corrected = merge_separated_words_dawg_regex(&lang_tooled, 3);
+    let corrected = merge_separated_words_dawg_regex(&lang_tooled, 4);
     println!("Texte après correction : {}", corrected);
     corrected
 }
@@ -191,14 +191,18 @@ pub fn burt_correct_text(text: &str) -> String {
     corrected
 }
 
-/// Fusionne jusqu'à `max_merge` mots consécutifs s'ils forment un mot valide dans le DAWG.
-/// Exemple : "au jourd hui" → "aujourd'hui"
 pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String {
     let re = Regex::new(r"\b\w+\b").unwrap();
     let token_matches: Vec<_> = re.find_iter(text).collect();
     let mut result = String::new();
     let mut last_end = 0;
     let mut i = 0;
+
+    // Debug logging
+    println!(
+        "Starting merge with tokens: {:?}",
+        token_matches.iter().map(|m| m.as_str()).collect::<Vec<_>>()
+    );
 
     while i < token_matches.len() {
         let mut merged = None;
@@ -208,7 +212,7 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                 // check that the tokens are adjacent (only whitespace between them)
                 let mut adjacent = true;
                 for j in i..(i + merge_len - 1) {
-                    let gap = &text[token_matches[j].end()..token_matches[j+1].start()];
+                    let gap = &text[token_matches[j].end()..token_matches[j + 1].start()];
                     if !gap.chars().all(|c| c.is_whitespace()) {
                         adjacent = false;
                         break;
@@ -219,15 +223,52 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                 }
 
                 // Build the merged candidate (without any extra spaces)
-                let candidate = token_matches[i..i+merge_len]
+                let tokens_to_merge: Vec<_> = token_matches[i..i + merge_len]
                     .iter()
                     .map(|m| m.as_str())
-                    .collect::<String>();
+                    .collect();
+                let candidate = tokens_to_merge.join("");
 
-                if super::DAWGS
-                    .values()
-                    .any(|dawg| dawg.find_iter(&candidate).next().is_some())
-                {
+                // Build the candidate with a single space between tokens
+                let candidate_with_space = tokens_to_merge.join(" ");
+
+                // Use lower-case for a case-insensitive search
+                let candidate_lower = candidate.to_lowercase();
+                let candidate_with_space_lower = candidate_with_space.to_lowercase();
+
+                println!(
+                    "Checking candidate: '{}' (from '{}')",
+                    candidate_lower, candidate_with_space_lower
+                );
+
+                // Fix: Check each DAWG individually and print which one matched
+                let mut in_dawg = false;
+                let mut spaced_in_dawg = false;
+
+                for (lang, dawg) in super::DAWGS.iter() {
+                    if dawg.find_iter(&candidate_lower).next().is_some() {
+                        println!("Found '{}' in {} DAWG", candidate_lower, lang);
+                        in_dawg = true;
+                    }
+                    if dawg.find_iter(&candidate_with_space_lower).next().is_some() {
+                        println!(
+                            "Found spaced version '{}' in {} DAWG",
+                            candidate_with_space_lower, lang
+                        );
+                        spaced_in_dawg = true;
+                    }
+                }
+
+                if candidate.len() > 20 || candidate.chars().any(|c| !c.is_alphabetic()) {
+                    continue;
+                }
+
+                if in_dawg && !spaced_in_dawg {
+                    println!(
+                        "Merging: '{}' (from {})",
+                        candidate,
+                        tokens_to_merge.join(" + ")
+                    );
                     merged = Some((candidate, merge_len));
                     break;
                 }

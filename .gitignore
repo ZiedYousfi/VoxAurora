@@ -4,8 +4,7 @@
 /models/*
 !/models
 VoxAurora
-/configs/*
-!/configs/base_config.json
 tools/jdk-24_macos-aarch64_bin.dmg
 /dics/*
 !/dics
+test.rs
