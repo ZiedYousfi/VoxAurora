@@ -195,46 +195,62 @@ pub fn burt_correct_text(text: &str) -> String {
 /// Exemple : "au jourd hui" → "aujourd'hui"
 pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String {
     let re = Regex::new(r"\b\w+\b").unwrap();
-    let mut tokens: Vec<&str> = re.find_iter(text).map(|m| m.as_str()).collect();
-    let mut result = Vec::new();
+    let token_matches: Vec<_> = re.find_iter(text).collect();
+    let mut result = String::new();
+    let mut last_end = 0;
     let mut i = 0;
 
-    while i < tokens.len() {
+    while i < token_matches.len() {
         let mut merged = None;
-
-        // Essaie de fusionner jusqu'à `max_merge` mots
+        // Try to merge tokens from i with merge lengths in descending order
         for merge_len in (2..=max_merge).rev() {
-            if i + merge_len <= tokens.len() {
-                let attempt = tokens[i..i + merge_len].join("");
+            if i + merge_len <= token_matches.len() {
+                // check that the tokens are adjacent (only whitespace between them)
+                let mut adjacent = true;
+                for j in i..(i + merge_len - 1) {
+                    let gap = &text[token_matches[j].end()..token_matches[j+1].start()];
+                    if !gap.chars().all(|c| c.is_whitespace()) {
+                        adjacent = false;
+                        break;
+                    }
+                }
+                if !adjacent {
+                    continue;
+                }
+
+                // Build the merged candidate (without any extra spaces)
+                let candidate = token_matches[i..i+merge_len]
+                    .iter()
+                    .map(|m| m.as_str())
+                    .collect::<String>();
+
                 if super::DAWGS
                     .values()
-                    .any(|dawg| dawg.find_iter(&attempt).next().is_some())
+                    .any(|dawg| dawg.find_iter(&candidate).next().is_some())
                 {
-                    merged = Some((attempt, merge_len));
+                    merged = Some((candidate, merge_len));
                     break;
                 }
             }
         }
 
+        // Append any non-token content between the last token processed and the current token.
+        let token_start = token_matches[i].start();
+        result.push_str(&text[last_end..token_start]);
+
         if let Some((word, count)) = merged {
-            result.push(word);
+            result.push_str(&word);
+            last_end = token_matches[i + count - 1].end();
             i += count;
         } else {
-            result.push(tokens[i].to_string());
+            // Just append the token as it appears in the original text.
+            let token_end = token_matches[i].end();
+            result.push_str(&text[token_start..token_end]);
+            last_end = token_end;
             i += 1;
         }
     }
-
-    // On reconstruit la phrase avec les espaces d'origine (approximatif mais fluide)
-    let re_space = Regex::new(r"\s+").unwrap();
-    let mut _raw_parts = re_space.split(text).filter(|s| !s.trim().is_empty());
-    let mut output = String::new();
-    for word in result {
-        if !output.is_empty() {
-            output.push(' ');
-        }
-        output.push_str(&word);
-    }
-
-    output
+    // Append the rest of the text after the last token.
+    result.push_str(&text[last_end..]);
+    result
 }
