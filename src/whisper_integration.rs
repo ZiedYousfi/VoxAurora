@@ -4,6 +4,7 @@ use std::error::Error;
 use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
+use unicode_normalization::UnicodeNormalization;
 use ureq;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -204,173 +205,242 @@ fn is_reasonable_word(word: &str) -> bool {
 
 /// Fusionne des tokens contigus du texte original s'ils forment un mot entier présent dans les DAWG.
 /// Utilise un score pour décider s'il faut fusionner ou conserver la version espacée.
+
+/// Point d'entrée principal : fusion des mots séparés s'ils apparaissent dans les DAWG.
 pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String {
-    // On détecte les “mots” à l'aide d'une regex (lettres + apostrophes éventuelles).
-    let re = Regex::new(r"\p{L}+(?:[’']\p{L}+)*").unwrap();
-    let token_matches: Vec<_> = re.find_iter(text).collect();
-
-    let mut result = String::new();
-    let mut last_end = 0;
-    let mut i = 0;
-
+    let token_matches = get_token_matches(text);
     println!(
         "Starting merge with tokens: {:?}",
         token_matches.iter().map(|m| m.as_str()).collect::<Vec<_>>()
     );
 
+    let mut result = String::new();
+    let mut last_end = 0;
+    let mut i = 0;
+
     while i < token_matches.len() {
-        let mut merged = None;
+        // On essaie de fusionner plusieurs tokens si possible
+        if let Some((merged_word, merged_count)) =
+            try_merge_tokens(text, &token_matches, i, max_merge)
+        {
+            // Si fusion possible :
+            let token_start = token_matches[i].start();
+            result.push_str(&text[last_end..token_start]);
+            result.push_str(&merged_word);
 
-        // On tente d’abord la fusion du plus grand nombre de tokens possible (max_merge), puis on diminue.
-        for merge_len in (2..=max_merge).rev() {
-            if i + merge_len <= token_matches.len() {
-                // Vérif : les tokens sont-ils uniquement séparés par des espaces/blancs ?
-                let mut adjacent = true;
-                for j in i..(i + merge_len - 1) {
-                    let gap = &text[token_matches[j].end()..token_matches[j + 1].start()];
-                    if !gap.chars().all(|c| c.is_whitespace()) {
-                        adjacent = false;
-                        break;
-                    }
-                }
-                if !adjacent {
-                    continue;
-                }
-
-                // Construit la version fusionnée (sans espace) et la version “espacée”
-                let tokens_to_merge: Vec<_> = token_matches[i..i + merge_len]
-                    .iter()
-                    .map(|m| m.as_str())
-                    .collect();
-                let candidate = tokens_to_merge.join(""); // "jourd'hui"
-                let candidate_with_space = tokens_to_merge.join(" "); // "jour d hui"
-
-                // Pour le matching, on travaille en minuscule (selon le DAWG).
-                use unicode_normalization::UnicodeNormalization;
-                let candidate_lower = candidate.nfkc().collect::<String>().to_lowercase();
-                let candidate_with_space_lower = candidate_with_space
-                    .nfkc()
-                    .collect::<String>()
-                    .to_lowercase();
-
-                println!(
-                    "Checking candidate: '{}' (from '{}')",
-                    candidate_lower, candidate_with_space_lower
-                );
-
-                // Filtre de base : taille, caractères
-                if !is_reasonable_word(&candidate_lower) {
-                    println!("⛔ Ignored candidate: '{}' (unreasonable)", candidate_lower);
-                    continue;
-                }
-
-                // On vérifie si c’est un match exact dans au moins un DAWG
-                let mut in_dawg = false;
-                let mut spaced_in_dawg = false;
-
-                for (lang, dawg) in super::DAWGS.0.iter() {
-                    if dawg_loader::contains_exact(dawg, &candidate_lower) {
-                        println!("Found '{}' in {} DAWG", candidate_lower, lang);
-                        in_dawg = true;
-                    }
-                    if dawg_loader::contains_exact(dawg, &candidate_with_space_lower) {
-                        println!(
-                            "Found spaced version '{}' in {} DAWG",
-                            candidate_with_space_lower, lang
-                        );
-                        spaced_in_dawg = true;
-                    }
-
-                    // Use word_lists for Levenshtein check instead of DAWG
-                    if let Some(word_list) = super::DAWGS.1.get(lang) {
-                        if dawg_loader::is_most_similar(word_list, &candidate_lower, 2) {
-                            println!("Found '{}' similar in {} DAWG", candidate_lower, lang);
-                            in_dawg = true;
-                        }
-                    }
-                }
-
-                if in_dawg {
-                    // Calcule le score global
-                    let merge_score = compute_merge_score(&candidate_lower, merge_len);
-                    println!(
-                        "🔎 Merge score for '{}': {:.2}",
-                        candidate_lower, merge_score
-                    );
-
-                    // Cas particulier : fusion de 2 mots courts (< 10 lettres)
-                    let short_common_word = (merge_len == 2) && (candidate_lower.len() < 10);
-
-                    if short_common_word {
-                        // On regarde le score BERT pour savoir si on fusionne malgré la version espacée.
-                        let bert_score = check_word_with_bert(&candidate_lower).unwrap_or(0.0);
-                        if spaced_in_dawg && bert_score < 0.1 {
-                            println!(
-                                "⛔ Not merging common expression: '{}' (keeping '{}') [BERT score: {:.2}]",
-                                candidate, candidate_with_space, bert_score
-                            );
-                        } else {
-                            println!(
-                                "✨ Merging short word: '{}' (from {}) [score: {:.2}]",
-                                candidate,
-                                tokens_to_merge.join(" + "),
-                                merge_score
-                            );
-                            merged = Some((candidate, merge_len));
-                            break;
-                        }
-                    } else {
-                        // Seuil selon la taille de la fusion
-                        let threshold = match merge_len {
-                            2 => 0.70,
-                            3 => 0.75,
-                            _ => 0.80,
-                        };
-
-                        if !spaced_in_dawg || merge_score >= threshold {
-                            println!(
-                                "✨ Merging: '{}' (from {}) [score: {:.2} ≥ {:.2}]",
-                                candidate,
-                                tokens_to_merge.join(" + "),
-                                merge_score,
-                                threshold
-                            );
-                            merged = Some((candidate, merge_len));
-                            break;
-                        } else {
-                            println!(
-                                "⛔ Not merging: spaced version exists and score {:.2} < {:.2}",
-                                merge_score, threshold
-                            );
-                        }
-                    }
-                } else {
-                    println!("⛔ Not merging: word not in dictionary");
-                }
-            }
-        }
-
-        // Construit la chaîne de sortie
-        let token_start = token_matches[i].start();
-        result.push_str(&text[last_end..token_start]);
-
-        if let Some((word, count)) = merged {
-            // On a décidé de fusionner
-            result.push_str(&word);
-            last_end = token_matches[i + count - 1].end();
-            i += count;
+            last_end = token_matches[i + merged_count - 1].end();
+            i += merged_count;
         } else {
-            // On laisse le token tel quel
+            // Sinon, on recopie simplement le token
+            let token_start = token_matches[i].start();
             let token_end = token_matches[i].end();
+
+            result.push_str(&text[last_end..token_start]);
             result.push_str(&text[token_start..token_end]);
+
             last_end = token_end;
             i += 1;
         }
     }
 
-    // Puis on ajoute la fin du texte après le dernier token
+    // On ajoute la fin du texte (après le dernier token)
     result.push_str(&text[last_end..]);
     result
+}
+
+/// Extrait les tokens à partir du texte (lettres + apostrophes).
+fn get_token_matches(text: &str) -> Vec<regex::Match<'_>> {
+    // Vous pouvez compiler la regex de façon statique si besoin, mais on la recrée ici pour la démo
+    let re = Regex::new(r"\p{L}+(?:[’']\p{L}+)*").unwrap();
+    re.find_iter(text).collect()
+}
+
+/// Tente une fusion de plusieurs tokens successifs, en commençant par la taille max_merge,
+/// puis en diminuant. Retourne Some((mot_fusionné, nombre_de_tokens_fusionnés)) ou None.
+fn try_merge_tokens(
+    text: &str,
+    token_matches: &[regex::Match<'_>],
+    start_index: usize,
+    max_merge: usize,
+) -> Option<(String, usize)> {
+    // On parcourt de la taille max jusqu'à 2 (fusion d'au moins 2 tokens)
+    for merge_len in (2..=max_merge).rev() {
+        if start_index + merge_len <= token_matches.len() {
+            // Vérifie que les tokens sont consécutifs (séparés seulement par des espaces/blancs)
+            if !are_tokens_adjacent(text, token_matches, start_index, merge_len) {
+                continue;
+            }
+
+            // Construit la version fusionnée et la version “espacée” (pour comparer)
+            let (candidate, candidate_with_space, candidate_lower, candidate_with_space_lower) =
+                build_candidates(text, token_matches, start_index, merge_len);
+
+            println!(
+                "Checking candidate: '{}' (from '{}')",
+                candidate_lower, candidate_with_space_lower
+            );
+
+            // Filtre simple : on abandonne si le mot n'est pas 'raisonnable'
+            if !is_reasonable_word(&candidate_lower) {
+                println!("⛔ Ignored candidate: '{}' (unreasonable)", candidate_lower);
+                continue;
+            }
+
+            // Vérifie si le candidat existe dans au moins un DAWG
+            let (in_dawg, spaced_in_dawg) =
+                check_in_dawg(&candidate_lower, &candidate_with_space_lower);
+
+            if in_dawg {
+                let merge_score = compute_merge_score(&candidate_lower, merge_len);
+                println!(
+                    "🔎 Merge score for '{}': {:.2}",
+                    candidate_lower, merge_score
+                );
+
+                // Vérifie la logique de fusion (score, version espacée, etc.)
+                if let Some((word, count)) = handle_merge_decision(
+                    &candidate,
+                    &candidate_lower,
+                    &candidate_with_space,
+                    spaced_in_dawg,
+                    merge_len,
+                    merge_score,
+                ) {
+                    return Some((word, count));
+                }
+            } else {
+                println!("⛔ Not merging: word not in dictionary");
+            }
+        }
+    }
+    None
+}
+
+/// Vérifie que les tokens (sur la plage [start_index..start_index+merge_len]) sont contigus
+/// et uniquement séparés par des espaces/blancs.
+fn are_tokens_adjacent(
+    text: &str,
+    token_matches: &[regex::Match<'_>],
+    start_index: usize,
+    merge_len: usize,
+) -> bool {
+    for j in start_index..(start_index + merge_len - 1) {
+        let gap = &text[token_matches[j].end()..token_matches[j + 1].start()];
+        if !gap.chars().all(|c| c.is_whitespace()) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Construit les différentes variantes (fusionnée, espacée, minuscule, etc.)
+fn build_candidates(
+    text: &str,
+    token_matches: &[regex::Match<'_>],
+    start_index: usize,
+    merge_len: usize,
+) -> (String, String, String, String) {
+    let tokens_to_merge: Vec<_> = token_matches[start_index..start_index + merge_len]
+        .iter()
+        .map(|m| m.as_str())
+        .collect();
+
+    let candidate = tokens_to_merge.join(""); // ex: "jourd'hui"
+    let candidate_with_space = tokens_to_merge.join(" "); // ex: "jour d hui"
+
+    // Normalise + minuscule
+    let candidate_lower = candidate.nfkc().collect::<String>().to_lowercase();
+    let candidate_with_space_lower = candidate_with_space
+        .nfkc()
+        .collect::<String>()
+        .to_lowercase();
+
+    (
+        candidate,
+        candidate_with_space,
+        candidate_lower,
+        candidate_with_space_lower,
+    )
+}
+
+/// Vérifie la présence du mot (et de sa version espacée) dans au moins un DAWG.
+fn check_in_dawg(candidate_lower: &str, candidate_with_space_lower: &str) -> (bool, bool) {
+    let mut in_dawg = false;
+    let mut spaced_in_dawg = false;
+
+    for (lang, dawg) in super::DAWGS.0.iter() {
+        if dawg_loader::contains_exact(dawg, candidate_lower) {
+            println!("Found '{}' in {} DAWG", candidate_lower, lang);
+            in_dawg = true;
+        }
+        if dawg_loader::contains_exact(dawg, candidate_with_space_lower) {
+            println!(
+                "Found spaced version '{}' in {} DAWG",
+                candidate_with_space_lower, lang
+            );
+            spaced_in_dawg = true;
+        }
+
+        if let Some(word_list) = super::DAWGS.1.get(lang) {
+            if dawg_loader::is_most_similar(word_list, candidate_lower, 1) {
+                println!("Found '{}' similar in {} DAWG", candidate_lower, lang);
+                in_dawg = true;
+            }
+        }
+    }
+
+    (in_dawg, spaced_in_dawg)
+}
+
+/// Décide si on doit fusionner les tokens, selon différentes conditions (score, version espacée, etc.).
+/// Retourne Some((candidate, merge_len)) si on fusionne, sinon None.
+fn handle_merge_decision(
+    candidate: &str,
+    candidate_lower: &str,
+    candidate_with_space: &str,
+    spaced_in_dawg: bool,
+    merge_len: usize,
+    merge_score: f32,
+) -> Option<(String, usize)> {
+    // Cas particulier: fusion de 2 mots courts (< 10 lettres)
+    let short_common_word = (merge_len == 2) && (candidate_lower.len() < 10);
+
+    if short_common_word {
+        let bert_score = check_word_with_bert(candidate_lower).unwrap_or(0.0);
+        if spaced_in_dawg && bert_score < 0.1 {
+            println!(
+                "⛔ Not merging common expression: '{}' (keeping '{}') [BERT score: {:.2}]",
+                candidate, candidate_with_space, bert_score
+            );
+            None
+        } else {
+            println!(
+                "✨ Merging short word: '{}' [score: {:.2}]",
+                candidate, merge_score
+            );
+            Some((candidate.to_string(), merge_len))
+        }
+    } else {
+        let threshold = match merge_len {
+            2 => 0.70,
+            3 => 0.75,
+            _ => 0.80,
+        };
+
+        if !spaced_in_dawg || merge_score >= threshold {
+            println!(
+                "✨ Merging: '{}' [score: {:.2} ≥ {:.2}]",
+                candidate, merge_score, threshold
+            );
+            Some((candidate.to_string(), merge_len))
+        } else {
+            println!(
+                "⛔ Not merging: spaced version exists and score {:.2} < {:.2}",
+                merge_score, threshold
+            );
+            None
+        }
+    }
 }
 
 /// Calcule un score de fusion [0..1].
@@ -413,10 +483,10 @@ fn check_word_with_bert(word: &str) -> Result<f32, Box<dyn std::error::Error + S
 
     // Plusieurs contextes différents pour mieux évaluer le mot
     let contexts = [
-        format!("On utilise souvent le mot {}.", "{}"),           // Fin de phrase
+        format!("On utilise souvent le mot {}.", "{}"), // Fin de phrase
         format!("Le {} est un terme courant en français.", "{}"), // Début de phrase, sujet
-        format!("J'aime beaucoup ce {}.", "{}"),                  // Complément d'objet
-        format!("Il parle de {} avec enthousiasme.", "{}"),       // Après préposition
+        format!("J'aime beaucoup ce {}.", "{}"),        // Complément d'objet
+        format!("Il parle de {} avec enthousiasme.", "{}"), // Après préposition
     ];
 
     let mut total_score = 0.0;
@@ -431,7 +501,11 @@ fn check_word_with_bert(word: &str) -> Result<f32, Box<dyn std::error::Error + S
         let test_embedding = super::bert::encode_sentence(&test_context)?;
 
         // Calcul des normes L2
-        let reference_norm = reference_embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        let reference_norm = reference_embedding
+            .iter()
+            .map(|&x| x * x)
+            .sum::<f32>()
+            .sqrt();
         let test_norm = test_embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
 
         // Calcul de similarité cosinus
@@ -451,7 +525,10 @@ fn check_word_with_bert(word: &str) -> Result<f32, Box<dyn std::error::Error + S
         total_score += context_score;
 
         println!("  - Contexte '{}': norm = {:.2}", test_context, test_norm);
-        println!("  - Référence '{}': norm = {:.2}", reference_context, reference_norm);
+        println!(
+            "  - Référence '{}': norm = {:.2}",
+            reference_context, reference_norm
+        );
         println!("  - Similarité cosinus: {:.2}", cosine_similarity);
         println!("  - Ratio des normes: {:.2}", norm_ratio);
         println!("  - Score pour ce contexte: {:.2}", context_score);

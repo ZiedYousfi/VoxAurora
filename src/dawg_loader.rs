@@ -99,8 +99,9 @@ pub fn is_most_similar(
     if let Some(min_distance) = word_list.iter()
         .map(|word| levenshtein(&normalized_query, word))
         .min() {
+        println!("Distance de Levenshtein pour {}: {}", normalized_query, min_distance);
         min_distance <= max_distance
     } else {
-        false // Empty word list
+        false
     }
 }
