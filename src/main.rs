@@ -1,18 +1,12 @@
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-
-pub mod actions;
-mod audio;
-pub mod bert;
-pub mod config;
-pub mod dawg_loader;
-mod wakeword;
-pub mod whisper_integration;
-
-pub static DAWGS: Lazy<(
-    HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>,
-    HashMap<&'static str, Vec<String>>,
-)> = Lazy::new(|| dawg_loader::load_dawgs());
+use VoxAurora::{
+    audio,
+    bert,
+    //actions,
+    config,
+    wakeword,
+    whisper_integration,
+    whisper_integration::DAWGS,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Chargement des DAWGS... ({} entrées)", DAWGS.0.len());

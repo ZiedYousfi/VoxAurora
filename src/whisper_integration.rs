@@ -7,8 +7,14 @@ use std::time::Duration;
 use unicode_normalization::UnicodeNormalization;
 use ureq;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
-
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use crate::dawg_loader;
+
+pub static DAWGS: Lazy<(
+    HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>,
+    HashMap<&'static str, Vec<String>>,
+)> = Lazy::new(|| dawg_loader::load_dawgs());
 
 /// Lance le serveur LanguageTool en arrière-plan et attend que ce dernier soit opérationnel
 pub fn start_languagetool_server() -> Child {
@@ -368,7 +374,7 @@ fn check_in_dawg(candidate_lower: &str, candidate_with_space_lower: &str) -> (bo
     let mut in_dawg = false;
     let mut spaced_in_dawg = false;
 
-    for (lang, dawg) in super::DAWGS.0.iter() {
+    for (lang, dawg) in DAWGS.0.iter() {
         if dawg_loader::contains_exact(dawg, candidate_lower) {
             println!("Found '{}' in {} DAWG", candidate_lower, lang);
             in_dawg = true;
@@ -381,7 +387,7 @@ fn check_in_dawg(candidate_lower: &str, candidate_with_space_lower: &str) -> (bo
             spaced_in_dawg = true;
         }
 
-        if let Some(word_list) = super::DAWGS.1.get(lang) {
+        if let Some(word_list) = DAWGS.1.get(lang) {
             if dawg_loader::is_most_similar(word_list, candidate_lower, 1) {
                 println!("Found '{}' similar in {} DAWG", candidate_lower, lang);
                 in_dawg = true;
