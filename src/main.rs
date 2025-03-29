@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use tokio::task::LocalSet;
 
 pub mod actions;
 mod audio;
@@ -17,7 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Chargement des DAWGS... ({} entrées)", DAWGS.len());
 
     let mut _server = whisper_integration::start_languagetool_server();
-
     bert::get_model();
 
     // Build the current-thread runtime manually
@@ -25,26 +23,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_all()
         .build()?;
 
-    let local = LocalSet::new();
+    let local = tokio::task::LocalSet::new();
 
-    // Run the async block until completion using block_on
-    rt.block_on(local.run_until(async {
-        let mut awake = false;
+    // Récupérer les arguments de la ligne de commande
+    let args: Vec<String> = std::env::args().collect();
 
+    rt.block_on(local.run_until(async move {
+        // Si l'utilisateur fournit le chemin du modèle dans les arguments (après le nom du programme), on l'utilise.
+        let model_path_input = if args.len() > 1 {
+            args[1].clone()
+        } else {
+            println!("Enter the path to Whisper model (or press Enter for default './models/ggml-medium.bin'):");
+            let mut input = String::new();
+            std::io::stdin()
+                .read_line(&mut input)
+                .expect("Failed to read input");
+            input.trim().to_string()
+        };
 
-        println!(
-            "Enter the path to Whisper model (or press Enter for default './models/ggml-medium.bin'):"
-        );
-        let mut model_path = String::new();
-        std::io::stdin()
-            .read_line(&mut model_path)
-            .expect("Failed to read input");
-        let model_path = model_path.trim();
-
-        let model_path = if model_path.is_empty() {
+        let model_path = if model_path_input.is_empty() {
             "./models/ggml-small.bin".to_string()
         } else {
-            model_path.to_string()
+            model_path_input
         };
 
         println!("Loading Whisper model from: {}", model_path);
@@ -57,29 +57,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        println!("Enter the path to config file (or press Enter for default 'config.json'):");
-        let mut config_path: Vec<String> = Vec::new();
-
-        loop {
-            let mut config_path_input = String::new();
-            std::io::stdin()
-                .read_line(&mut config_path_input)
-                .expect("Failed to read input");
-            if config_path_input.trim() == "done" {
-                break;
+        // Pour la config, si des arguments supplémentaires sont fournis, on les utilise.
+        let config_paths: Vec<String> = if args.len() > 2 {
+            args[2..].to_vec()
+        } else {
+            println!("Enter the path to config file (enter paths one by one and type 'done' when finished):");
+            let mut paths = Vec::new();
+            loop {
+                let mut line = String::new();
+                std::io::stdin()
+                    .read_line(&mut line)
+                    .expect("Failed to read input");
+                let trimmed = line.trim();
+                if trimmed == "done" {
+                    break;
+                }
+                if !trimmed.is_empty() {
+                    paths.push(trimmed.to_string());
+                }
             }
-            let config_path_input = config_path_input.trim().to_string();
-            if !config_path_input.is_empty(){
-                config_path.push(config_path_input);
+            if paths.is_empty() {
+                paths.push("./configs/base_config.json".to_string());
             }
-        }
+            paths
+        };
 
-        if config_path.is_empty() {
-            config_path.push("./configs/base_config.json".to_string());
-        }
-
-        println!("Loading config from: {:?}", config_path);
-        let config = match config::load_config(config_path) {
+        println!("Loading config from: {:?}", config_paths);
+        let config = match config::load_config(config_paths) {
             Ok(config) => config,
             Err(e) => {
                 eprintln!("Error loading config: {}", e);
@@ -90,9 +94,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let device = audio::get_device().expect("Failed to get audio device");
         let mut audio_processor = audio::AudioProcessor::new(device);
 
-        audio_processor.start_capture().await.expect("Failed to start capture");
+        audio_processor
+            .start_capture()
+            .await
+            .expect("Failed to start capture");
         println!("Listening continuously. Speak to activate commands.");
 
+        // Boucle principale de traitement audio
+        let mut awake = false;
         loop {
             let audio_data = match audio_processor.get_next_speech_segment().await {
                 Ok(data) => data,
@@ -122,14 +131,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match wakeword::is_wake_word_present(std::sync::Arc::new(wake_state), 0).await {
                 Ok(true) => {
                     awake = !awake;
-                },
-                Ok(false) => {
-
-                },
+                }
+                Ok(false) => {}
                 Err(e) => eprintln!("Error during wake word detection: {}", e),
             }
 
-            if !awake{continue;}
+            if !awake {
+                continue;
+            }
 
             println!("System is now {}", if awake { "awake" } else { "sleeping" });
 
@@ -159,7 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }));
 
-    // Wait for the languagetool server process to finish
+    // Attendre la fin du serveur LanguageTool
     if let Ok(exit_status) = _server.wait() {
         println!("LanguageTool server exited with status: {}", exit_status);
     }
