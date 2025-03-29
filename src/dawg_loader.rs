@@ -1,7 +1,8 @@
 use daachorse::DoubleArrayAhoCorasick;
 use std::collections::HashMap;
 use std::fs;
-use unicode_normalization::UnicodeNormalization; // Add this
+use unicode_normalization::UnicodeNormalization;
+use strsim::levenshtein;
 
 const DICTIONARIES: &[(&str, &str)] = &[
     (
@@ -14,11 +15,13 @@ const DICTIONARIES: &[(&str, &str)] = &[
     ),
 ];
 
-pub fn load_dawgs() -> HashMap<&'static str, DoubleArrayAhoCorasick<u32>> {
+// Modify your load_dawgs function to store the word lists
+pub fn load_dawgs() -> (HashMap<&'static str, DoubleArrayAhoCorasick<u32>>, HashMap<&'static str, Vec<String>>) {
     // Create the target directory if it doesn't exist
     fs::create_dir_all("./dics").expect("Échec de création du répertoire ./dics");
 
     let mut dawgs = HashMap::new();
+    let mut word_lists = HashMap::new();
 
     for (lang_code, url) in DICTIONARIES.iter() {
         let file_path = format!("./dics/{}.dic", lang_code);
@@ -42,11 +45,14 @@ pub fn load_dawgs() -> HashMap<&'static str, DoubleArrayAhoCorasick<u32>> {
 
         let dawg = DoubleArrayAhoCorasick::new(&words).expect("Échec de création du DAWG");
         dawgs.insert(*lang_code, dawg);
+        word_lists.insert(*lang_code, words);
     }
 
     println!("🌟 Tous les DAWGs ont été construits avec succès !");
-    dawgs
+    (dawgs, word_lists)
 }
+
+
 
 fn download_dic(url: &str) -> Result<String, Box<dyn std::error::Error>> {
     let body = ureq::get(url)
@@ -81,4 +87,20 @@ fn parse_hunspell_dic(content: &str) -> Vec<String> {
 pub fn contains_exact(dawg: &DoubleArrayAhoCorasick<u32>, word: &str) -> bool {
     dawg.find_iter(word)
         .any(|m| m.start() == 0 && m.end() == word.len())
+}
+
+pub fn is_most_similar(
+    word_list: &[String],
+    query: &str,
+    max_distance: usize
+) -> bool {
+    let normalized_query = query.to_lowercase().nfkc().collect::<String>();
+
+    if let Some(min_distance) = word_list.iter()
+        .map(|word| levenshtein(&normalized_query, word))
+        .min() {
+        min_distance <= max_distance
+    } else {
+        false // Empty word list
+    }
 }

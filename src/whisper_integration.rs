@@ -268,7 +268,7 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                 let mut in_dawg = false;
                 let mut spaced_in_dawg = false;
 
-                for (lang, dawg) in super::DAWGS.iter() {
+                for (lang, dawg) in super::DAWGS.0.iter() {
                     if dawg_loader::contains_exact(dawg, &candidate_lower) {
                         println!("Found '{}' in {} DAWG", candidate_lower, lang);
                         in_dawg = true;
@@ -279,6 +279,14 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                             candidate_with_space_lower, lang
                         );
                         spaced_in_dawg = true;
+                    }
+
+                    // Use word_lists for Levenshtein check instead of DAWG
+                    if let Some(word_list) = super::DAWGS.1.get(lang) {
+                        if dawg_loader::is_most_similar(word_list, &candidate_lower, 2) {
+                            println!("Found '{}' similar in {} DAWG", candidate_lower, lang);
+                            in_dawg = true;
+                        }
                     }
                 }
 

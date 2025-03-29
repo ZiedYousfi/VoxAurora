@@ -9,11 +9,13 @@ pub mod dawg_loader;
 mod wakeword;
 pub mod whisper_integration;
 
-pub static DAWGS: Lazy<HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>> =
-    Lazy::new(dawg_loader::load_dawgs);
+pub static DAWGS: Lazy<(
+    HashMap<&'static str, daachorse::DoubleArrayAhoCorasick<u32>>,
+    HashMap<&'static str, Vec<String>>,
+)> = Lazy::new(|| dawg_loader::load_dawgs());
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Chargement des DAWGS... ({} entrées)", DAWGS.len());
+    println!("Chargement des DAWGS... ({} entrées)", DAWGS.0.len());
 
     let mut _server = whisper_integration::start_languagetool_server();
     bert::get_model();
@@ -225,11 +227,7 @@ mod tests {
         // Depending on DAWG configuration, the merge might not occur if the entry is missing.
         // Assert either the merge happened.
         println!("Merged text: '{}'", merged);
-        assert!(
-            merged.contains("aujourd'hui"),
-            "Merged text: '{}'",
-            merged
-        );
+        assert!(merged.contains("aujourd'hui"), "Merged text: '{}'", merged);
     }
 
     // Test that checks punctuation cleanup and spacing.
