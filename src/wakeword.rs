@@ -68,7 +68,7 @@ use once_cell::sync::Lazy;
 use std::error::Error;
 use whisper_rs::WhisperState;
 
-/// Les wake words à détecter
+/// The wake words to detect
 const WAKE_VARIANTS: &[&str; 12] = &[
     "aurora",
     "auroha",
@@ -84,36 +84,33 @@ const WAKE_VARIANTS: &[&str; 12] = &[
     "vox ouroho.",
 ];
 
-/// Seuil minimum de confiance pour un token (entre 0.0 et 1.0)
-//const TOKEN_PROB_THRESHOLD: f32 = 0.3;
-
-/// Seuil de similarité cosine pour considérer une correspondance d'embeddings
+/// The minimum cosine similarity threshold to consider a match
 const EMBEDDING_SIMILARITY_THRESHOLD: f32 = 0.7;
 
-/// Pré-calcule les embeddings pour chaque wake word
+/// Pre-calculated embeddings for each wake word
 static WAKE_VARIANTS_EMBEDDINGS: Lazy<Vec<Vec<f32>>> = Lazy::new(|| {
     WAKE_VARIANTS
         .iter()
         .map(|&word| {
             encode_sentence(word).unwrap_or_else(|_| {
-                eprintln!("Échec de l'encodage du wake word: {}", word);
+                log::error!("Failed to encode wake word: {}", word);
                 vec![]
             })
         })
         .collect()
 });
 
-/// Synchronous version doing the actual wake word detection.
+/// Synchronous function that performs actual wake word detection.
 fn is_wake_word_present_sync(
     state: &WhisperState,
     segment_index: i32,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
-    // Récupère le texte entier brut du segment
+    // Retrieve the raw text of the segment
     let raw_segment_text = state.full_get_segment_text(segment_index)?;
-    // Nettoie le texte avec la fonction réutilisée
+    // Clean the text using a shared function
     let segment_text = whisper_integration::clean_whisper_text(&raw_segment_text);
 
-    // On génère l’embedding à partir du texte nettoyé
+    // Generate the embedding from the cleaned text
     let segment_embedding = crate::bert::encode_sentence(&segment_text)?;
 
     for (i, &wake_word) in WAKE_VARIANTS.iter().enumerate() {
@@ -122,12 +119,16 @@ fn is_wake_word_present_sync(
             continue;
         }
         let similarity = crate::bert::cosine_similarity(&segment_embedding, candidate_embedding);
-        println!(
-            "Comparaison du segment nettoyé '{}' avec '{}': similarité = {:.3}",
-            segment_text, wake_word, similarity
+
+        log::info!(
+            "Comparing cleaned segment '{}' with '{}': similarity = {:.3}",
+            segment_text,
+            wake_word,
+            similarity
         );
+
         if similarity > EMBEDDING_SIMILARITY_THRESHOLD {
-            println!("→ Wake word détecté !");
+            log::info!("Wake word detected!");
             return Ok(true);
         }
     }
@@ -137,14 +138,16 @@ fn is_wake_word_present_sync(
 
 use std::sync::Arc;
 
-/// Async wrapper that runs the blocking work on a dedicated thread.
+/// Asynchronous wrapper that executes the blocking detection on a dedicated thread.
 pub async fn is_wake_word_present(
     state: Arc<WhisperState>,
     segment_index: i32,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
     // Move the Arc into the blocking task
-    let result =
-        tokio::task::spawn_blocking(move || is_wake_word_present_sync(&state, segment_index))
-            .await??;
+    let result = tokio::task::spawn_blocking(move || {
+        is_wake_word_present_sync(&state, segment_index)
+    })
+    .await??;
     Ok(result)
 }
+

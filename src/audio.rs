@@ -1,5 +1,5 @@
-use cpal::Device;
 use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::Device;
 use rubato::Resampler;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
@@ -29,6 +29,8 @@ impl AudioProcessor {
         }
     }
 
+    /// Starts audio capture in a non-blocking manner.
+    /// Chunks of samples are gathered and sent via a channel.
     pub async fn start_capture(&self) -> Result<(), Box<dyn Error>> {
         let config = self.device.default_input_config()?;
         let sample_format = config.sample_format();
@@ -53,29 +55,28 @@ impl AudioProcessor {
                     if let Ok(mut buffer) = audio_data_clone.lock() {
                         buffer.extend_from_slice(data);
 
-                        // As soon as enough samples are accumulated, send a chunk for processing
+                        // Once enough samples are accumulated, send a chunk for processing
                         if buffer.len() > 4096 {
                             let chunk = buffer.clone();
                             buffer.clear();
 
                             // Use try_send instead of spawning a task
                             if let Err(e) = sender.try_send(chunk) {
-                                // Check if the error is because the channel is full
                                 match e {
                                     tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                        eprintln!(
-                                            "Audio processing channel is full, dropping sample"
+                                        log::warn!(
+                                            "Audio processing channel is full, dropping samples"
                                         );
                                     }
                                     _ => {
-                                        eprintln!("Channel closed: {}", e);
+                                        log::error!("Audio channel closed: {}", e);
                                     }
                                 }
                             }
                         }
                     }
                 },
-                |err| eprintln!("Stream error: {}", err),
+                |err| log::error!("Stream error: {}", err),
                 None,
             )?,
             _ => return Err("Unsupported sample format".into()),
@@ -84,18 +85,23 @@ impl AudioProcessor {
         Ok(())
     }
 
-    // pub async fn stop_capture(&self) -> Result<(), Box<dyn Error>> {
-    //     if let Some(tx) = self.keep_alive_tx.lock().unwrap().take() {
-    //         let _ = tx.send(());
-    //         println!("🛑 Stopping audio capture");
-    //         Ok(())
-    //     } else {
-    //         Err("Audio capture is not active or already stopped".into())
-    //     }
-    // }
+    /*
+    /// Optional function to stop capturing if you ever need it.
+    pub async fn stop_capture(&self) -> Result<(), Box<dyn Error>> {
+        if let Some(tx) = self.keep_alive_tx.lock().unwrap().take() {
+            let _ = tx.send(());
+            log::info!("Stopping audio capture");
+            Ok(())
+        } else {
+            Err("Audio capture is not active or already stopped".into())
+        }
+    }
+    */
 
+    /// Continuously listens for speech segments and returns them once they are complete.
+    /// - If silence is detected for `SILENCE_DURATION_TO_FINALIZE`, the segment is considered done.
+    /// - If the segment exceeds `MAX_SPEECH_DURATION`, it's finalized automatically.
     pub async fn get_next_speech_segment(&mut self) -> Result<Vec<f32>, Box<dyn Error>> {
-        // Get the number of channels from the default config
         let channels = self.device.default_input_config()?.channels() as usize;
         let mut is_speech_active = false;
         let mut speech_buffer = Vec::new();
@@ -109,21 +115,23 @@ impl AudioProcessor {
                 if !is_speech_active {
                     is_speech_active = true;
                     speech_start = Instant::now();
-                    println!("🔊 Speech detected");
+                    log::info!("🔊 Speech detected");
                 }
                 silence_start = Instant::now();
                 speech_buffer.extend_from_slice(&chunk);
             } else if is_speech_active {
+                // We continue to accumulate samples just in case it's a brief silence
                 speech_buffer.extend_from_slice(&chunk);
+
                 if silence_start.elapsed() > SILENCE_DURATION_TO_FINALIZE {
-                    println!("🔇 Speech segment complete");
+                    log::info!("🔇 Speech segment complete");
                     let resampled = resample_to_16k(&speech_buffer, channels);
                     return Ok(resampled);
                 }
             }
 
             if is_speech_active && speech_start.elapsed() > MAX_SPEECH_DURATION {
-                println!("⏱️ Maximum speech duration reached");
+                log::info!("⏱️ Maximum speech duration reached");
                 let resampled = resample_to_16k(&speech_buffer, channels);
                 return Ok(resampled);
             }
@@ -133,14 +141,17 @@ impl AudioProcessor {
     }
 }
 
+/// Lets the user pick a device interactively, or defaults to the system's default device.
 pub fn get_device() -> Result<Device, Box<dyn Error>> {
     let host = cpal::default_host();
     let devices = host.input_devices()?;
+
     println!("Available input devices:");
     for (i, device) in devices.enumerate() {
         println!("{}: {}", i, device.name()?);
     }
 
+    println!("Please enter the index of the device you want to use (or press Enter to use default):");
     let device = match std::io::stdin()
         .lines()
         .next()
@@ -150,7 +161,7 @@ pub fn get_device() -> Result<Device, Box<dyn Error>> {
     {
         Some(device) => device,
         None => {
-            println!("Invalid selection, using the default device.");
+            println!("Invalid selection or no selection, using the default device.");
             host.default_input_device().ok_or("No input device found")?
         }
     };
@@ -159,42 +170,34 @@ pub fn get_device() -> Result<Device, Box<dyn Error>> {
     Ok(device)
 }
 
+/// Resamples the given audio data to 16kHz mono.
+/// Uses rubato for chunked FFT-based resampling.
 fn resample_to_16k(input: &[f32], channels: usize) -> Vec<f32> {
-    // Downmix to mono
+    // Downmix to mono by averaging channels
     let mono_input: Vec<f32> = input
         .chunks(channels)
         .map(|frame| frame.iter().sum::<f32>() / channels as f32)
         .collect();
 
-    // Create a resampler for mono (1 channel) with chunk size 1323
+    // Create a resampler for mono (1 channel), chunk size 1323
     let mut resampler = rubato::FftFixedInOut::<f32>::new(44100, 16000, 1323, 1)
         .expect("Error creating resampler");
 
     let mut output = Vec::new();
 
-    // Process each 1323-sample chunk individually
+    // Process each 1323-sample chunk
     for chunk in mono_input.chunks(1323) {
-        // If the chunk is smaller than 1323, pad with zeros
         let mut frame = chunk.to_vec();
         if frame.len() < 1323 {
+            // Pad with zeros if not enough samples
             frame.resize(1323, 0.0);
         }
-        // Process a single channel input: the input slice length must equal 1 channel.
+        // The resampler expects a slice of length 1323 for each channel
         let res = resampler
             .process(&[&frame[..]], None)
             .expect("Resampling failed");
-        // The output is a Vec of one Vec<f32>, grab the first channel and append.
+        // The output is a Vec of one Vec<f32>, so we take channel 0
         output.extend_from_slice(&res[0]);
     }
     output
 }
-
-// fn pad_segment(mut segment: Vec<f32>) -> Vec<f32> {
-//     // Whisper requires at least 1 second of audio at 16kHz = 16000 samples.
-//     const MIN_SAMPLES: usize = 16000;
-//     if segment.len() < MIN_SAMPLES {
-//         let missing = MIN_SAMPLES - segment.len();
-//         segment.extend(vec![0.0; missing]);
-//     }
-//     segment
-// }

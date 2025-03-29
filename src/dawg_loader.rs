@@ -15,45 +15,51 @@ const DICTIONARIES: &[(&str, &str)] = &[
     ),
 ];
 
-// Modify your load_dawgs function to store the word lists
-pub fn load_dawgs() -> (HashMap<&'static str, DoubleArrayAhoCorasick<u32>>, HashMap<&'static str, Vec<String>>) {
-    // Create the target directory if it doesn't exist
-    fs::create_dir_all("./dics").expect("Échec de création du répertoire ./dics");
+/// Loads DAWGs for multiple languages and returns both the DAWG automata
+/// and the original word lists in separate HashMaps.
+pub fn load_dawgs() -> (
+    HashMap<&'static str, DoubleArrayAhoCorasick<u32>>,
+    HashMap<&'static str, Vec<String>>,
+) {
+    // Ensure the target directory exists
+    fs::create_dir_all("./dics").expect("Failed to create ./dics directory");
 
     let mut dawgs = HashMap::new();
     let mut word_lists = HashMap::new();
 
     for (lang_code, url) in DICTIONARIES.iter() {
         let file_path = format!("./dics/{}.dic", lang_code);
+
+        // Check if we already have a cached dictionary file
         let content = if fs::metadata(&file_path).is_ok() {
-            println!("📂 Utilisation du fichier cached pour {}...", lang_code);
-            fs::read_to_string(&file_path).expect("Erreur lors de la lecture du fichier")
+            log::info!("📂 Using cached dictionary file for {}...", lang_code);
+            fs::read_to_string(&file_path).expect("Error reading cached file")
         } else {
-            println!("⏬ Téléchargement du dictionnaire pour {}...", lang_code);
-            let content = download_dic(url).expect("Erreur de téléchargement");
-            fs::write(&file_path, &content).expect("Échec de l'écriture du fichier");
+            log::info!("⏬ Downloading dictionary for {}...", lang_code);
+            let content = download_dic(url).expect("Dictionary download failed");
+            fs::write(&file_path, &content).expect("Failed to write dictionary file");
             content
         };
 
         let words = parse_hunspell_dic(&content);
 
-        println!(
-            "✅ {} mots extraits pour la langue {}",
+        log::info!(
+            "✅ Extracted {} words for language {}",
             words.len(),
             lang_code
         );
 
-        let dawg = DoubleArrayAhoCorasick::new(&words).expect("Échec de création du DAWG");
+        let dawg = DoubleArrayAhoCorasick::new(&words)
+            .expect("Failed to build DAWG automaton");
         dawgs.insert(*lang_code, dawg);
         word_lists.insert(*lang_code, words);
     }
 
-    println!("🌟 Tous les DAWGs ont été construits avec succès !");
+    log::info!("🌟 All DAWGs have been built successfully!");
     (dawgs, word_lists)
 }
 
-
-
+/// Downloads the dictionary content from the given `url`.
 fn download_dic(url: &str) -> Result<String, Box<dyn std::error::Error>> {
     let body = ureq::get(url)
         .call()
@@ -64,13 +70,15 @@ fn download_dic(url: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(body)
 }
 
+/// Parses a Hunspell `.dic` file content, skipping the first line (which often contains word count).
+/// Normalizes and lowercases each word, returning a `Vec<String>` of unique entries.
 fn parse_hunspell_dic(content: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut words = Vec::new();
 
+    // Skip the first line (often just a number)
     for line in content.lines().skip(1) {
         let (word, _) = line.split_once('/').unwrap_or((line, ""));
-        // Normalize and lowercase the word for consistency with the candidate.
         let word = word.trim().to_lowercase().nfkc().collect::<String>();
         if !word.is_empty() && seen.insert(word.clone()) {
             words.push(word);
@@ -80,26 +88,27 @@ fn parse_hunspell_dic(content: &str) -> Vec<String> {
     words
 }
 
-/// Checks if a word exists exactly in the automaton.
-///
-/// This function verifies that `word` matches completely in the DAWG,
-/// not just as a substring of longer words.
+/// Checks if `word` is an exact match in the DAWG (not just a substring).
 pub fn contains_exact(dawg: &DoubleArrayAhoCorasick<u32>, word: &str) -> bool {
     dawg.find_iter(word)
         .any(|m| m.start() == 0 && m.end() == word.len())
 }
 
+/// Determines if `query` is similar to at least one word in `word_list` within `max_distance`
+/// using the Levenshtein distance.
 pub fn is_most_similar(
     word_list: &[String],
     query: &str,
-    max_distance: usize
+    max_distance: usize,
 ) -> bool {
     let normalized_query = query.to_lowercase().nfkc().collect::<String>();
 
-    if let Some(min_distance) = word_list.iter()
+    if let Some(min_distance) = word_list
+        .iter()
         .map(|word| levenshtein(&normalized_query, word))
-        .min() {
-        println!("Distance de Levenshtein pour {}: {}", normalized_query, min_distance);
+        .min()
+    {
+        log::info!("Levenshtein distance for {}: {}", normalized_query, min_distance);
         min_distance <= max_distance
     } else {
         false

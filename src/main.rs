@@ -8,8 +8,14 @@ use VoxAurora::{
     whisper_integration::DAWGS,
 };
 
+// On importe notre logger
+mod logger;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Chargement des DAWGS... ({} entrées)", DAWGS.0.len());
+    // Initialise le logger (activé seulement si la feature "with-logs" est présente)
+    logger::init_logger();
+
+    log::info!("Loading DAWGS... ({} entries)", DAWGS.0.len());
 
     let mut _server = whisper_integration::start_languagetool_server();
     bert::get_model();
@@ -21,15 +27,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let local = tokio::task::LocalSet::new();
 
-    // Récupérer les arguments de la ligne de commande
+    // Retrieve command-line arguments
     let args: Vec<String> = std::env::args().collect();
 
     rt.block_on(local.run_until(async move {
-        // Si l'utilisateur fournit le chemin du modèle dans les arguments (après le nom du programme), on l'utilise.
+        // If the user provided a model path as the first argument, use it.
+        // Otherwise, ask interactively.
         let model_path_input = if args.len() > 1 {
             args[1].clone()
         } else {
-            println!("Enter the path to Whisper model (or press Enter for default './models/ggml-small.bin'):");
+            println!("Please enter the path to the Whisper model (or press Enter for default './models/ggml-small.bin'):");
             let mut input = String::new();
             std::io::stdin()
                 .read_line(&mut input)
@@ -43,21 +50,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             model_path_input
         };
 
-        println!("Loading Whisper model from: {}", model_path);
+        log::info!("Loading Whisper model from: {}", model_path);
 
         let whisper_model = match whisper_integration::init_model(model_path) {
             Ok(model) => model,
             Err(e) => {
-                eprintln!("Error initializing Whisper model: {}", e);
+                log::error!("Error initializing Whisper model: {}", e);
                 std::process::exit(1);
             }
         };
 
-        // Pour la config, si des arguments supplémentaires sont fournis, on les utilise.
+        // If additional arguments are provided after the model path, use them as config paths.
+        // Otherwise, ask the user interactively.
         let config_paths: Vec<String> = if args.len() > 2 {
             args[2..].to_vec()
         } else {
-            println!("Enter the path to config file (enter paths one by one and type 'done' when finished):");
+            println!("Please enter the path(s) to config file(s). Type 'done' when finished:");
             let mut paths = Vec::new();
             loop {
                 let mut line = String::new();
@@ -65,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .read_line(&mut line)
                     .expect("Failed to read input");
                 let trimmed = line.trim();
-                if trimmed == "done" {
+                if trimmed.eq_ignore_ascii_case("done") {
                     break;
                 }
                 if !trimmed.is_empty() {
@@ -78,11 +86,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             paths
         };
 
-        println!("Loading config from: {:?}", config_paths);
+        log::info!("Loading config from: {:?}", config_paths);
+
         let config = match config::load_config(config_paths) {
             Ok(config) => config,
             Err(e) => {
-                eprintln!("Error loading config: {}", e);
+                log::error!("Error loading config: {}", e);
                 std::process::exit(1);
             }
         };
@@ -94,15 +103,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .start_capture()
             .await
             .expect("Failed to start capture");
-        println!("Listening continuously. Speak to activate commands.");
 
-        // Boucle principale de traitement audio
+        log::info!("Listening continuously. Speak to activate commands.");
+
+        // Main audio processing loop
         let mut awake = false;
         loop {
             let audio_data = match audio_processor.get_next_speech_segment().await {
                 Ok(data) => data,
                 Err(e) => {
-                    eprintln!("Error during audio capture: {}", e);
+                    log::error!("Error during audio capture: {}", e);
                     continue;
                 }
             };
@@ -118,9 +128,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             wake_params.set_token_timestamps(false);
             wake_params.set_language(Some("fr"));
 
-            let mut wake_state = whisper_model.create_state().expect("msg");
+            let mut wake_state = whisper_model.create_state().expect("Failed to create wake_state");
             if let Err(e) = wake_state.full(wake_params, &audio_data) {
-                eprintln!("Error processing audio data for wake word detection: {}", e);
+                log::error!("Error processing audio data for wake word detection: {}", e);
                 continue;
             }
 
@@ -129,19 +139,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     awake = !awake;
                 }
                 Ok(false) => {}
-                Err(e) => eprintln!("Error during wake word detection: {}", e),
+                Err(e) => log::error!("Error during wake word detection: {}", e),
             }
 
             if !awake {
                 continue;
             }
 
-            println!("System is now {}", if awake { "awake" } else { "sleeping" });
+            log::info!("System is now {}", if awake { "awake" } else { "sleeping" });
 
             let transcription = match whisper_integration::transcribe(&whisper_model, &audio_data, "fr").await {
                 Ok(text) => text,
                 Err(e) => {
-                    eprintln!("Error during audio transcription: {}", e);
+                    log::error!("Error during audio transcription: {}", e);
                     continue;
                 }
             };
@@ -150,23 +160,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
-            println!("---------------------------------------------------");
-            println!("{}", &transcription);
-            println!("---------------------------------------------------");
+            log::info!("---------------------------------------------------");
+            log::info!("{}", &transcription);
+            log::info!("---------------------------------------------------");
 
             match config::execute_command(&config, transcription).await {
-                Ok(_) => println!("Command execution completed"),
+                Ok(_) => log::info!("Command execution completed"),
                 Err(e) => {
-                    eprintln!("Failed to execute command: {}", e);
+                    log::error!("Failed to execute command: {}", e);
                     continue;
                 }
             };
         }
     }));
 
-    // Attendre la fin du serveur LanguageTool
+    // Wait for the LanguageTool server to exit
     if let Ok(exit_status) = _server.wait() {
-        println!("LanguageTool server exited with status: {}", exit_status);
+        log::info!("LanguageTool server exited with status: {}", exit_status);
     }
 
     Ok(())
@@ -181,45 +191,33 @@ mod tests {
     // This test is already present but kept for reference.
     #[test]
     fn test_burt_correct_text() {
-        // Start the LanguageTool server (make sure it's not already running on port 8081)
         let _server = whisper_integration::start_languagetool_server();
-        // Give the server a moment to really start
         thread::sleep(Duration::from_secs(1));
 
         let text = "bonjour, com ment ça va ?";
         let result = whisper_integration::clean_whisper_text(text);
-        // Expect the cleaned text to have fixed spacing and capitalization.
         assert_eq!(result, "Bonjour, comment ça va ?");
     }
 
     // Test that verifies tag removal and extra space cleanup.
     #[test]
     fn test_clean_whisper_text_removes_tags_and_extra_spaces() {
-        // Input text containing special tags and multiple spaces.
         let text =
             "Voici un exemple [_BEG_]avec des [_TT_99]balises   et   des espaces   inutiles.";
-        // Start the LanguageTool server if needed.
         let _server = whisper_integration::start_languagetool_server();
         thread::sleep(Duration::from_secs(1));
 
         let cleaned = whisper_integration::clean_whisper_text(text);
-        // Verify that no special tags remain.
         assert!(!cleaned.contains("[_BEG_]"));
         assert!(!cleaned.contains("[_TT_"));
-        // Verify that extra spaces are reduced.
         assert!(!cleaned.contains("  "));
     }
 
     // Test the merging of incorrectly separated words.
     #[test]
     fn test_merge_separated_words_dawg_regex() {
-        // This example expects that if DAWGs contain the entry for "aujourd'hui",
-        // then the separated phrase "au jour d hui" will be merged.
         let input_text = "Il est au jour d hui un bel après midi.";
         let merged = whisper_integration::merge_separated_words_dawg_regex(input_text, 4);
-        // Check that the merged text now contains "aujourd'hui".
-        // Depending on DAWG configuration, the merge might not occur if the entry is missing.
-        // Assert either the merge happened.
         println!("Merged text: '{}'", merged);
         assert!(merged.contains("aujourd'hui"), "Merged text: '{}'", merged);
     }
@@ -232,11 +230,8 @@ mod tests {
         thread::sleep(Duration::from_secs(1));
 
         let cleaned = whisper_integration::clean_whisper_text(text);
-        // Check that multiple spaces are reduced.
         assert!(!cleaned.contains("  "));
-        // Check that stray spaces before punctuation are corrected.
         assert!(!cleaned.contains(" ,"));
-        // Since LanguageTool might alter punctuation, at least ensure basic cleanup.
         assert!(cleaned.contains("Bonjour"));
     }
 }
