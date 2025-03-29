@@ -1,11 +1,12 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::process::{Child, Command};
 use std::sync::Once;
 use std::thread;
 use std::time::Duration;
 
 use VoxAurora::whisper_integration::{
-  burt_correct_text, clean_whisper_text, merge_separated_words_dawg_regex, start_languagetool_server,
+    burt_correct_text, clean_whisper_text, merge_separated_words_dawg_regex,
+    start_languagetool_server,
 };
 
 // Use Once to ensure server is started only once
@@ -17,14 +18,11 @@ fn setup_languagetool_server() {
     unsafe {
         INIT.call_once(|| {
             println!("Starting LanguageTool server for benchmarks...");
-            match start_languagetool_server() {
-                child => {
-                    println!("LanguageTool server started successfully");
-                    LANGUAGETOOL_SERVER = Some(child);
-                    // Give the server a moment to fully initialize
-                    thread::sleep(Duration::from_secs(2));
-                }
-            }
+            let child = start_languagetool_server();
+            println!("LanguageTool server started successfully");
+            LANGUAGETOOL_SERVER = Some(child);
+            // Give the server a moment to fully initialize
+            thread::sleep(Duration::from_secs(2));
         });
     }
 }
@@ -74,20 +72,20 @@ fn bench_merge_separated_words(c: &mut Criterion) {
     let mut group = c.benchmark_group("word_merging");
 
     let test_cases = [
-      ("aujourd hui", 2),
-      ("bon jour à tous", 2),
-      ("c est un exemple de phrase avec des mots séparés", 2),
-      ("je m appelle jean et j habite à paris", 2)
+        ("aujourd hui", 2),
+        ("bon jour à tous", 2),
+        ("c est un exemple de phrase avec des mots séparés", 2),
+        ("je m appelle jean et j habite à paris", 2),
     ];
 
     for (i, (text, max_merge)) in test_cases.iter().enumerate() {
-      group.bench_with_input(
-        BenchmarkId::new("merge_separated_words", i),
-        &(text, max_merge),
-        |b, &(text, max_merge)| {
-          b.iter(|| merge_separated_words_dawg_regex(black_box(text), black_box(*max_merge)))
-        }
-      );
+        group.bench_with_input(
+            BenchmarkId::new("merge_separated_words", i),
+            &(text, max_merge),
+            |b, &(text, max_merge)| {
+                b.iter(|| merge_separated_words_dawg_regex(black_box(text), black_box(*max_merge)))
+            },
+        );
     }
 
     group.finish();
