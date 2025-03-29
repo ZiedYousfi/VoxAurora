@@ -128,7 +128,7 @@ pub fn clean_whisper_text(original: &str) -> String {
     println!("Texte avant correction : {}", clean);
     // Appel à l'API LanguageTool
     let lang_tooled = burt_correct_text(clean.trim());
-    let corrected = merge_separated_words_dawg_regex(&lang_tooled, 3);
+    let corrected = merge_separated_words_dawg_regex(&lang_tooled, 2);
     println!("Texte après correction : {}", corrected);
     corrected
 }
@@ -384,9 +384,9 @@ fn compute_merge_score(word: &str, merge_len: usize) -> f32 {
 
     // Score de base
     let base_score = match merge_len {
-        2 => 0.70,
-        3 => 0.75,
-        _ => 0.80,
+        2 => 0.50,
+        3 => 0.55,
+        _ => 0.60,
     };
 
     // Pénalité légère pour mot très court
@@ -394,7 +394,7 @@ fn compute_merge_score(word: &str, merge_len: usize) -> f32 {
 
     // Score BERT (approx. 0..1)
     let bert_score = match check_word_with_bert(word) {
-        Ok(s) => s * 0.40, // on pondère le score BERT pour éviter l'effet “tout ou rien”
+        Ok(s) => s * 0.10, // on pondère le score BERT pour éviter l'effet “tout ou rien”
         Err(_) => {
             println!("⚠️ BERT check failed for '{}'", word);
             0.0
@@ -406,35 +406,60 @@ fn compute_merge_score(word: &str, merge_len: usize) -> f32 {
 }
 
 /// Vérifie la plausibilité d'un mot via BERT en calculant la norme de l'embedding
-/// sur 2 contextes. Retourne un score [0..1].
+/// sur plusieurs contextes. Retourne un score [0..1].
 fn check_word_with_bert(word: &str) -> Result<f32, Box<dyn std::error::Error + Send + Sync>> {
-    // Deux phrases contextuelles simples
-    let contexts = vec![
-        format!("On utilise souvent le mot {}.", word),
-        format!("Le mot {} apparaît dans les textes officiels.", word),
+    // Mot de référence courant et valide
+    const REFERENCE_WORD: &str = "bonjour";
+
+    // Plusieurs contextes différents pour mieux évaluer le mot
+    let contexts = [
+        format!("On utilise souvent le mot {}.", "{}"),           // Fin de phrase
+        format!("Le {} est un terme courant en français.", "{}"), // Début de phrase, sujet
+        format!("J'aime beaucoup ce {}.", "{}"),                  // Complément d'objet
+        format!("Il parle de {} avec enthousiasme.", "{}"),       // Après préposition
     ];
 
-    let mut total_norm = 0.0;
-    let mut count = 0;
+    let mut total_score = 0.0;
 
-    for ctx in contexts {
-        let embedding = super::bert::encode_sentence(&ctx)?;
-        // Calcule la norme L2
-        let norm = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
-        total_norm += norm;
-        count += 1;
+    // Pour chaque contexte, calculer un score
+    for context_template in &contexts {
+        let reference_context = context_template.replace("{}", REFERENCE_WORD);
+        let test_context = context_template.replace("{}", word);
 
-        println!("  - Contexte '{}': norm = {:.2}", ctx, norm);
+        // Obtenir les embeddings
+        let reference_embedding = super::bert::encode_sentence(&reference_context)?;
+        let test_embedding = super::bert::encode_sentence(&test_context)?;
+
+        // Calcul des normes L2
+        let reference_norm = reference_embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        let test_norm = test_embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
+
+        // Calcul de similarité cosinus
+        let dot_product: f32 = reference_embedding
+            .iter()
+            .zip(test_embedding.iter())
+            .map(|(&a, &b)| a * b)
+            .sum();
+
+        let cosine_similarity = dot_product / (reference_norm * test_norm).max(1e-6);
+
+        // Ratio des normes (pour détecter les anomalies)
+        let norm_ratio = (test_norm / reference_norm).clamp(0.0, 2.0) / 2.0;
+
+        // Score pour ce contexte
+        let context_score = (cosine_similarity * 0.7 + norm_ratio * 0.3).clamp(0.0, 1.0);
+        total_score += context_score;
+
+        println!("  - Contexte '{}': norm = {:.2}", test_context, test_norm);
+        println!("  - Référence '{}': norm = {:.2}", reference_context, reference_norm);
+        println!("  - Similarité cosinus: {:.2}", cosine_similarity);
+        println!("  - Ratio des normes: {:.2}", norm_ratio);
+        println!("  - Score pour ce contexte: {:.2}", context_score);
     }
 
-    if count == 0 {
-        return Ok(0.0);
-    }
+    // Score final: moyenne des scores pour chaque contexte
+    let combined_score = (total_score / contexts.len() as f32).clamp(0.0, 1.0);
+    println!("  => BERT score combiné final = {:.2}", combined_score);
 
-    let mean_norm = total_norm / count as f32;
-    // Ex. si la norme BERT typique tourne autour de 10-15, on normalise en divisant par 15
-    let scaled_score = (mean_norm / 15.0).clamp(0.0, 1.0);
-
-    println!("  => BERT final (moyenne des normes) = {:.2}", mean_norm);
-    Ok(scaled_score)
+    Ok(combined_score)
 }

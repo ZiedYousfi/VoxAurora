@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let model_path_input = if args.len() > 1 {
             args[1].clone()
         } else {
-            println!("Enter the path to Whisper model (or press Enter for default './models/ggml-medium.bin'):");
+            println!("Enter the path to Whisper model (or press Enter for default './models/ggml-small.bin'):");
             let mut input = String::new();
             std::io::stdin()
                 .read_line(&mut input)
