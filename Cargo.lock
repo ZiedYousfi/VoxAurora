@@ -18,6 +18,7 @@ dependencies = [
  "serde_json",
  "strsim",
  "tokio",
+ "unicode-normalization",
  "ureq 3.0.10",
  "urlencoding",
  "whisper-rs",

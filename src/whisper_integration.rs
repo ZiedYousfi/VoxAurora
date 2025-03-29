@@ -1,4 +1,3 @@
-use daachorse::DoubleArrayAhoCorasick;
 use regex::Regex;
 use serde::Deserialize;
 use std::error::Error;
@@ -136,6 +135,7 @@ pub fn clean_whisper_text(original: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 struct Match {
+    #[allow(dead_code)]
     message: String,
     replacements: Vec<Replacement>,
     offset: usize,
@@ -199,7 +199,6 @@ pub fn burt_correct_text(text: &str) -> String {
 /// ...
 /// Dans le code ci-dessous, on accède à `super::DAWGS`.
 fn is_reasonable_word(word: &str) -> bool {
-    // Par exemple, on autorise max 20 lettres et que des caractères alphabétiques (ou apostrophe).
     word.len() <= 20 && word.chars().all(|c| c.is_alphabetic() || c == '\'')
 }
 
@@ -207,7 +206,7 @@ fn is_reasonable_word(word: &str) -> bool {
 /// Utilise un score pour décider s'il faut fusionner ou conserver la version espacée.
 pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String {
     // On détecte les “mots” à l'aide d'une regex (lettres + apostrophes éventuelles).
-    let re = Regex::new(r"[[:alpha:]]+(?:[’'][[:alpha:]]+)*").unwrap();
+    let re = Regex::new(r"\p{L}+(?:[’']\p{L}+)*").unwrap();
     let token_matches: Vec<_> = re.find_iter(text).collect();
 
     let mut result = String::new();
@@ -243,12 +242,16 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                     .iter()
                     .map(|m| m.as_str())
                     .collect();
-                let candidate = tokens_to_merge.join("");  // "jourd'hui"
+                let candidate = tokens_to_merge.join(""); // "jourd'hui"
                 let candidate_with_space = tokens_to_merge.join(" "); // "jour d hui"
 
                 // Pour le matching, on travaille en minuscule (selon le DAWG).
-                let candidate_lower = candidate.to_lowercase();
-                let candidate_with_space_lower = candidate_with_space.to_lowercase();
+                use unicode_normalization::UnicodeNormalization;
+                let candidate_lower = candidate.nfkc().collect::<String>().to_lowercase();
+                let candidate_with_space_lower = candidate_with_space
+                    .nfkc()
+                    .collect::<String>()
+                    .to_lowercase();
 
                 println!(
                     "Checking candidate: '{}' (from '{}')",
@@ -266,12 +269,15 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                 let mut spaced_in_dawg = false;
 
                 for (lang, dawg) in super::DAWGS.iter() {
-                    if dawg_loader::contains_exact(dawg,&candidate_lower) {
+                    if dawg_loader::contains_exact(dawg, &candidate_lower) {
                         println!("Found '{}' in {} DAWG", candidate_lower, lang);
                         in_dawg = true;
                     }
-                    if dawg_loader::contains_exact(dawg,&candidate_with_space_lower) {
-                        println!("Found spaced version '{}' in {} DAWG", candidate_with_space_lower, lang);
+                    if dawg_loader::contains_exact(dawg, &candidate_with_space_lower) {
+                        println!(
+                            "Found spaced version '{}' in {} DAWG",
+                            candidate_with_space_lower, lang
+                        );
                         spaced_in_dawg = true;
                     }
                 }
@@ -279,7 +285,10 @@ pub fn merge_separated_words_dawg_regex(text: &str, max_merge: usize) -> String 
                 if in_dawg {
                     // Calcule le score global
                     let merge_score = compute_merge_score(&candidate_lower, merge_len);
-                    println!("🔎 Merge score for '{}': {:.2}", candidate_lower, merge_score);
+                    println!(
+                        "🔎 Merge score for '{}': {:.2}",
+                        candidate_lower, merge_score
+                    );
 
                     // Cas particulier : fusion de 2 mots courts (< 10 lettres)
                     let short_common_word = (merge_len == 2) && (candidate_lower.len() < 10);
@@ -377,7 +386,7 @@ fn compute_merge_score(word: &str, merge_len: usize) -> f32 {
 
     // Score BERT (approx. 0..1)
     let bert_score = match check_word_with_bert(word) {
-        Ok(s) => s * 0.40,  // on pondère le score BERT pour éviter l'effet “tout ou rien”
+        Ok(s) => s * 0.40, // on pondère le score BERT pour éviter l'effet “tout ou rien”
         Err(_) => {
             println!("⚠️ BERT check failed for '{}'", word);
             0.0
@@ -403,7 +412,7 @@ fn check_word_with_bert(word: &str) -> Result<f32, Box<dyn std::error::Error + S
     for ctx in contexts {
         let embedding = super::bert::encode_sentence(&ctx)?;
         // Calcule la norme L2
-        let norm = embedding.iter().map(|&x| x*x).sum::<f32>().sqrt();
+        let norm = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
         total_norm += norm;
         count += 1;
 
